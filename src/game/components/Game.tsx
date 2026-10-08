@@ -2,12 +2,19 @@
 
 import { useEffect, useState, useRef } from "react";
 import dynamic from "next/dynamic";
+import { useAuth } from "../store/useAuth";
 import { usePlayer } from "../store/usePlayer";
 import { PLACE_BY_ID, START_PLACE_ID } from "../data/places";
-import { NEED_LINES, pickLine } from "../data/npcs";
 import { toast } from "../store/useToasts";
-import { initPlayerSync } from "@/lib/firestore";
 import { sfx } from "../lib/sound";
+import {
+  listenToPlayer,
+  initPresence,
+  updatePresence,
+  clearPresence,
+  listenToAllPresence,
+  type PlayerProfile,
+} from "@/lib/firestore";
 import HUD from "./HUD";
 import BottomNav from "./BottomNav";
 import Chat from "./Chat";
@@ -16,6 +23,13 @@ import PlaceSheet from "./PlaceSheet";
 import MapSheet from "./MapSheet";
 import PeopleSheet from "./PeopleSheet";
 import Phone from "./Phone";
+
+// Simple need-warning lines (no fake NPC chatter)
+const NEED_LINES = {
+  hunger: ["Your belle dey rumble. Go find food.", "Hunger wan finish you. Chop something abeg."],
+  energy: ["Energy don finish. Go sleep or sit down small.", "Body no be firewood. Rest small."],
+  vibe: ["Your vibe dey low. Go link up somewhere.", "Spirit dey down. Dance or stroll."],
+};
 
 // Dynamically import the Three.js scene (ssr:false — WebGL is browser-only)
 const Scene3D = dynamic(() => import("./Scene3D"), {
@@ -33,90 +47,100 @@ const Scene3D = dynamic(() => import("./Scene3D"), {
 type Sheet = "place" | "map" | "people" | "phone" | null;
 
 export default function Game() {
+  const uid = useAuth((s) => s.uid);
+  const idToken = useAuth((s) => s.idToken);
+  const soloMode = useAuth((s) => s.soloMode);
+
   const placeId = usePlayer((s) => s.placeId);
-  const setPlace = usePlayer((s) => s.setPlace);
   const name = usePlayer((s) => s.name);
   const hunger = usePlayer((s) => s.hunger);
   const energy = usePlayer((s) => s.energy);
   const vibe = usePlayer((s) => s.vibe);
   const tick = usePlayer((s) => s.tick);
-  const pushChat = usePlayer((s) => s.pushChat);
-  const playerId = usePlayer((s) => s.playerId);
   const banned = usePlayer((s) => s.banned);
-  const setScreen = usePlayer((s) => s.setScreen);
+  const syncFromProfile = usePlayer((s) => s.syncFromProfile);
+  const setPlace = usePlayer((s) => s.setPlace);
+  const advanceHour = usePlayer((s) => s.advanceHour);
 
   const [sheet, setSheet] = useState<Sheet>(null);
   const [sheetPlaceId, setSheetPlaceId] = useState<string>(placeId);
   const [targetPlaceId, setTargetPlaceId] = useState<string | null>(null);
   const [hideUI, setHideUI] = useState(false);
-  const [online] = useState(() => 40 + Math.floor(Math.random() * 60));
-  const [views] = useState(() => 1240 + Math.floor(Math.random() * 800));
 
-  // Init Firestore sync when player enters the game
+  // Sync player store from Firestore profile (server is source of truth)
   useEffect(() => {
-    if (!playerId) return;
-    const stopSync = initPlayerSync(playerId);
-    return () => stopSync();
-  }, [playerId]);
+    if (!uid) return;
+    const unsub = listenToPlayer(uid, (p) => {
+      if (p) syncFromProfile(p as PlayerProfile);
+    });
+    return () => unsub();
+  }, [uid, syncFromProfile]);
 
-  // Banned screen — admin has banned this player
+  // Init RTDB presence
   useEffect(() => {
-    if (banned) {
-      toast("You have been banned by admin. Contact support.", "danger", "🚫");
-    }
-  }, [banned]);
+    if (!uid || soloMode) return;
+    initPresence(uid, name || "Player", usePlayer.getState().lookId, placeId);
+    return () => { void clearPresence(uid); };
+  }, [uid, name, soloMode]);
 
-  // Sync sheet place with current place
+  // Update presence when placeId changes
   useEffect(() => {
-    setSheetPlaceId(placeId);
-  }, [placeId]);
+    if (!uid || soloMode) return;
+    void updatePresence(uid, { placeId, name });
+  }, [uid, placeId, name, soloMode]);
 
-  // Needs decay tick (every 6 seconds) — also advance game clock
-  const advanceHour = usePlayer((s) => s.advanceHour);
+  // Needs decay + game clock tick (every 6 seconds)
   useEffect(() => {
     const id = setInterval(() => {
       tick(6000);
-      // 6 real seconds = 1 game hour (so 1 game day = 144 sec = 2.4 min)
       advanceHour(1);
     }, 6000);
     return () => clearInterval(id);
   }, [tick, advanceHour]);
 
-  // Toast when needs get critically low (only once per need)
+  // Toast when needs get critically low
   const lastWarn = useRef<Record<string, number>>({});
   useEffect(() => {
     const now = Date.now();
     if (hunger < 18 && now - (lastWarn.current.hunger || 0) > 30_000) {
       lastWarn.current.hunger = now;
-      toast(pickLine(NEED_LINES.hunger), "warn", "🍽️");
+      toast(NEED_LINES.hunger[0], "warn", "🍽️");
       sfx.play("warn");
     }
     if (energy < 15 && now - (lastWarn.current.energy || 0) > 30_000) {
       lastWarn.current.energy = now;
-      toast(pickLine(NEED_LINES.energy), "warn", "⚡");
+      toast(NEED_LINES.energy[0], "warn", "⚡");
       sfx.play("warn");
     }
     if (vibe < 18 && now - (lastWarn.current.vibe || 0) > 30_000) {
       lastWarn.current.vibe = now;
-      toast(pickLine(NEED_LINES.vibe), "warn", "✨");
+      toast(NEED_LINES.vibe[0], "warn", "✨");
       sfx.play("warn");
     }
   }, [hunger, energy, vibe]);
 
-  // Play ban sound when banned
+  // Play ban sound
   useEffect(() => {
     if (banned) sfx.play("ban");
   }, [banned]);
 
-  // Welcome toast on mount
+  // Welcome toast
   useEffect(() => {
+    if (!name) return;
     const t = setTimeout(() => {
       toast(`Welcome to NaijaLavish, ${name}! Tap a place on the map to walk there.`, "success", "🎉");
     }, 600);
     return () => clearTimeout(t);
   }, [name]);
 
-  // When character arrives at a place (via CustomEvent from Scene3D), open the place sheet
+  // Solo mode banner
+  useEffect(() => {
+    if (soloMode) {
+      toast("Offline mode — chat + multiplayer disabled. Check your connection.", "warn", "📡");
+    }
+  }, [soloMode]);
+
+  // Character arrival → open place sheet
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { placeId: string };
@@ -132,32 +156,16 @@ export default function Game() {
     return () => window.removeEventListener("naijalavish:arrive", handler as EventListener);
   }, [setPlace]);
 
-  // Play click sound on nav button presses
+  // Sync sheet place with current place
+  useEffect(() => { setSheetPlaceId(placeId); }, [placeId]);
+
   function nav(id: "home" | "map" | "people" | "phone" | "hide") {
     sfx.play("click");
-    if (id === "hide") {
-      setHideUI(!hideUI);
-      return;
-    }
-    if (id === "home") {
-      // Walk home
-      setTargetPlaceId("home");
-      setSheet(null);
-      return;
-    }
-    if (id === "map") {
-      setSheet(sheet === "map" ? null : "map");
-      return;
-    }
-    if (id === "people") {
-      setSheet(sheet === "people" ? null : "people");
-      return;
-    }
-    if (id === "phone") {
-      setSheet(sheet === "phone" ? null : "phone");
-      sfx.play("phone");
-      return;
-    }
+    if (id === "hide") { setHideUI(!hideUI); return; }
+    if (id === "home") { setTargetPlaceId("home"); setSheet(null); return; }
+    if (id === "map")  { setSheet(sheet === "map" ? null : "map"); return; }
+    if (id === "people") { setSheet(sheet === "people" ? null : "people"); return; }
+    if (id === "phone")  { setSheet(sheet === "phone" ? null : "phone"); sfx.play("phone"); return; }
   }
 
   function pickFromMap(id: string) {
@@ -165,7 +173,7 @@ export default function Game() {
     setSheet(null);
   }
 
-  // Banned screen — admin has banned this player
+  // Banned screen
   if (banned) {
     return (
       <main
@@ -176,14 +184,10 @@ export default function Game() {
           <div className="text-5xl mb-4">🚫</div>
           <h1 className="text-2xl font-bold mb-2 text-destructive">Account Banned</h1>
           <p className="text-sm text-foreground/60 mb-6">
-            Your account has been banned by the admin. If you think this is a
-            mistake, contact support at <b>support@naijalavish.fun</b>.
+            Your account has been banned by the admin. If you think this is a mistake, contact support.
           </p>
           <button
-            onClick={() => {
-              usePlayer.getState().logout();
-              setScreen("landing");
-            }}
+            onClick={() => { usePlayer.getState().logout(); useAuth.getState().signOut(); }}
             className="big-btn plain"
           >
             ← Back to home
@@ -198,60 +202,38 @@ export default function Game() {
       className="relative w-full overflow-hidden"
       style={{ height: "100dvh", background: "#eef7f1" }}
     >
-      {/* 3D scene */}
       <Scene3D targetPlaceId={targetPlaceId} />
 
-      {/* Top stats / online count */}
+      {/* Top right: real online count only */}
       <div className="absolute top-3 right-3 z-20 flex flex-col items-end gap-2">
-        <div className="panel flex items-center gap-2 px-2.5 py-1.5" style={{ borderRadius: 999 }}>
-          <span className="text-xs text-foreground/50">👁</span>
-          <span className="text-xs font-medium tabnum">{views.toLocaleString()}</span>
-          <span className="text-[10px] text-foreground/40">views</span>
-        </div>
-        <div className="panel flex items-center gap-2 px-2.5 py-1.5" style={{ borderRadius: 999 }}>
-          <span className="dot" />
-          <span className="text-xs font-medium tabnum">{online}</span>
-          <span className="text-[10px] text-foreground/40">online</span>
-        </div>
+        {soloMode ? (
+          <div className="panel flex items-center gap-2 px-2.5 py-1.5" style={{ borderRadius: 999 }}>
+            <span className="text-xs text-foreground/50">📡</span>
+            <span className="text-xs font-medium">Offline</span>
+          </div>
+        ) : (
+          <OnlineCounter />
+        )}
       </div>
 
-      {/* HUD */}
       {!hideUI && <HUD />}
-
-      {/* Chat */}
       {!hideUI && <Chat />}
 
-      {/* Sheets */}
       <PlaceSheet
         open={sheet === "place"}
         onClose={() => setSheet(null)}
-        onWalkHere={
-          sheetPlaceId !== placeId
-            ? () => setTargetPlaceId(sheetPlaceId)
-            : undefined
-        }
+        onWalkHere={sheetPlaceId !== placeId ? () => setTargetPlaceId(sheetPlaceId) : undefined}
       />
-      <MapSheet
-        open={sheet === "map"}
-        onClose={() => setSheet(null)}
-        onPick={pickFromMap}
-      />
-      <PeopleSheet
-        open={sheet === "people"}
-        onClose={() => setSheet(null)}
-      />
+      <MapSheet open={sheet === "map"} onClose={() => setSheet(null)} onPick={pickFromMap} />
+      <PeopleSheet open={sheet === "people"} onClose={() => setSheet(null)} />
       {sheet === "phone" && <Phone onClose={() => setSheet(null)} />}
 
-      {/* Bottom nav */}
       <BottomNav
         active={hideUI ? "hide" : sheet === "phone" ? "phone" : sheet === "people" ? "people" : sheet === "map" ? "map" : "home"}
         onNav={nav}
       />
-
-      {/* Toasts */}
       <Toasts />
 
-      {/* Hidden UI hint */}
       {hideUI && (
         <button
           onClick={() => setHideUI(false)}
@@ -261,14 +243,22 @@ export default function Game() {
           👁 Show UI
         </button>
       )}
-
-      {/* Brand mark (top-left, hidden when HUD shows) */}
-      <div
-        className="absolute top-3 left-1/2 -translate-x-1/2 z-10 text-xs text-foreground/40 pointer-events-none"
-        aria-hidden="true"
-      >
-        Naija<span className="text-primary font-semibold">Lavish</span>
-      </div>
     </main>
+  );
+}
+
+// Real online counter from RTDB presence
+function OnlineCounter() {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    const unsub = listenToAllPresence((entries) => setCount(entries.length));
+    return () => unsub();
+  }, []);
+  return (
+    <div className="panel flex items-center gap-2 px-2.5 py-1.5" style={{ borderRadius: 999 }}>
+      <span className="dot" />
+      <span className="text-xs font-medium tabnum">{count}</span>
+      <span className="text-[10px] text-foreground/40">online</span>
+    </div>
   );
 }

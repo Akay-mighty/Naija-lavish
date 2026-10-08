@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "../store/useAuth";
 import { usePlayer, activeLook } from "../store/usePlayer";
-import { NPCS, RICH_LIST } from "../data/npcs";
+import { NPCS } from "../data/npcs";
 import { ITEMS, ITEM_BY_ID } from "../data/items";
 import { naira, shortNaira } from "../lib/format";
 import { toast } from "../store/useToasts";
+import { sfx } from "../lib/sound";
 
 type App = "gist" | "bank" | "wallet" | "photos" | "contacts" | "settings" | "shop";
 
@@ -153,32 +155,37 @@ function GistApp() {
 function BankApp() {
   const cash = usePlayer((s) => s.cash);
   const bank = usePlayer((s) => s.bank);
-  const adjustCash = usePlayer((s) => s.adjustCash);
-  const adjustBank = usePlayer((s) => s.adjustBank);
+  const applyActionResult = usePlayer((s) => s.applyActionResult);
   const earnedTotal = usePlayer((s) => s.earnedTotal);
   const spentTotal = usePlayer((s) => s.spentTotal);
+  const idToken = useAuth((s) => s.idToken);
   const [amount, setAmount] = useState(1000);
+  const [busy, setBusy] = useState(false);
 
-  function deposit() {
-    if (amount <= 0) return;
-    if (cash < amount) {
-      toast("Not enough cash to deposit.", "warn", "💸");
-      return;
+  async function callBank(actionId: "deposit" | "withdraw") {
+    if (!idToken || busy || amount <= 0) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/action", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ action: "bank", actionId, amount }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        toast(data.error || "Bank failed.", "warn", "💸");
+        return;
+      }
+      applyActionResult(data.result);
+      toast(actionId === "deposit" ? `Deposited ${naira(amount)}.` : `Withdrew ${naira(amount)}.`, "success", actionId === "deposit" ? "🏦" : "💵");
+      sfx.play(actionId === "deposit" ? "cashSpend" : "cashEarn");
+    } finally {
+      setBusy(false);
     }
-    adjustCash(-amount);
-    adjustBank(amount);
-    toast(`Deposited ${naira(amount)} to bank.`, "success", "🏦");
   }
-  function withdraw() {
-    if (amount <= 0) return;
-    if (bank < amount) {
-      toast("Not enough bank balance.", "warn", "💸");
-      return;
-    }
-    adjustBank(-amount);
-    adjustCash(amount);
-    toast(`Withdrew ${naira(amount)} from bank.`, "success", "💵");
-  }
+
+  function deposit() { void callBank("deposit"); }
+  function withdraw() { void callBank("withdraw"); }
 
   return (
     <div>
@@ -452,6 +459,7 @@ function SettingsApp() {
   const createdAt = usePlayer((s) => s.createdAt);
   const logout = usePlayer((s) => s.logout);
   const setScreen = usePlayer((s) => s.setScreen);
+  const signOut = useAuth((s) => s.signOut);
 
   return (
     <div>
@@ -464,7 +472,7 @@ function SettingsApp() {
         )}
         <div className="text-[11px] text-white/40 mt-2">
           {isGuest ? "Guest account" : "Full account"} · joined{" "}
-          {new Date(createdAt).toLocaleDateString()}
+          {createdAt ? new Date(createdAt).toLocaleDateString() : "—"}
         </div>
       </div>
       <div className="rounded-xl bg-white/5 p-3 mb-3">
@@ -476,8 +484,9 @@ function SettingsApp() {
         </p>
       </div>
       <button
-        onClick={() => {
-          if (confirm("Log out? Your progress saves on this device.")) {
+        onClick={async () => {
+          if (confirm("Log out? Your progress syncs to your account.")) {
+            await signOut();
             logout();
             setScreen("landing");
           }
@@ -487,7 +496,7 @@ function SettingsApp() {
         Log out
       </button>
       <div className="text-[10px] text-white/30 text-center mt-3">
-        NaijaLavish v1.0 · Made with love for Naija
+        NaijaLavish v2.0 · Made with love for Naija
       </div>
     </div>
   );

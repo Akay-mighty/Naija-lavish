@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "../store/useAuth";
 import { usePlayer } from "../store/usePlayer";
 import { PLACE_BY_ID, type PlaceAction } from "../data/places";
 import { ITEMS, ITEM_BY_ID } from "../data/items";
@@ -20,14 +21,15 @@ export default function PlaceSheet({ open, onClose, onWalkHere }: PlaceSheetProp
   const place = PLACE_BY_ID[placeId];
   const cash = usePlayer((s) => s.cash);
   const energy = usePlayer((s) => s.energy);
-  const workAction = usePlayer((s) => s.workAction);
-  const spray = usePlayer((s) => s.spray);
-  const rest = usePlayer((s) => s.rest);
+  const cooldowns = usePlayer((s) => s.cooldowns);
+  const applyActionResult = usePlayer((s) => s.applyActionResult);
   const buyItem = usePlayer((s) => s.buyItem);
   const ownsItem = usePlayer((s) => s.ownsItem);
-  const cooldowns = usePlayer((s) => s.cooldowns);
+  const equipItem = usePlayer((s) => s.equipItem);
+  const idToken = useAuth((s) => s.idToken);
   const [now, setNow] = useState(Date.now());
   const [showShop, setShowShop] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   // Tick cooldown clock every 500ms while open
   useEffect(() => {
@@ -37,74 +39,84 @@ export default function PlaceSheet({ open, onClose, onWalkHere }: PlaceSheetProp
   }, [open]);
 
   // Reset shop state when place changes
-  useEffect(() => {
-    setShowShop(false);
-  }, [placeId]);
+  useEffect(() => { setShowShop(false); }, [placeId]);
 
   if (!place) return null;
 
-  function runAction(a: PlaceAction) {
-    if (a.kind === "work") {
-      const ok = workAction(
-        a.id,
-        a.reward ?? 0,
-        a.energyCost ?? 0,
-        a.hungerCost ?? 0,
-        a.vibeCost ?? 0
-      );
-      if (!ok) {
-        if (energy < (a.energyCost ?? 0)) {
-          toast("Energy too low. Go rest first.", "warn", "⚡");
+  // ---- Call /api/action with the ID token ----
+  async function callServer(
+    action: string,
+    actionId: string,
+    amount?: number
+  ): Promise<{ ok: boolean; result?: any; error?: string }> {
+    if (!idToken) return { ok: false, error: "Not signed in." };
+    try {
+      const res = await fetch("/api/action", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ action, actionId, placeId, amount }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) return { ok: false, error: data.error || "Action failed." };
+      return { ok: true, result: data.result };
+    } catch (e: any) {
+      return { ok: false, error: e?.message || "Network error." };
+    }
+  }
+
+  async function runAction(a: PlaceAction) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (a.kind === "work") {
+        const r = await callServer("work", a.id);
+        if (!r.ok) {
+          toast(r.error || "Couldn't work.", "warn", "⚠️");
           sfx.play("warn");
-        } else {
-          toast("Cooling down... give am small time.", "warn", "⏳");
-          sfx.play("warn");
+          return;
         }
-        return;
+        applyActionResult(r.result);
+        toast(`+${naira(a.reward ?? 0)} earned!`, "success", "💰");
+        sfx.play("cashEarn");
+      } else if (a.kind === "buy") {
+        if (a.id === "boutique") {
+          setShowShop(true);
+          sfx.play("click");
+          return;
+        }
+        const r = await callServer("buy", a.id);
+        if (!r.ok) {
+          toast(r.error || "Couldn't buy.", "warn", "💸");
+          sfx.play("warn");
+          return;
+        }
+        applyActionResult(r.result);
+        toast(a.id === "buy-food" ? "Belle don full! 🍽️" : "Paid. Enjoy! ✨", "success");
+        sfx.play("cashSpend");
+      } else if (a.kind === "spray") {
+        const amount = Math.abs(a.reward ?? 0);
+        const r = await callServer("spray", a.id, amount);
+        if (!r.ok) {
+          toast(r.error || "Couldn't spray.", "warn", "💸");
+          sfx.play("warn");
+          return;
+        }
+        applyActionResult(r.result);
+        toast(`Sprayed ${naira(amount)} at the dance floor! 🎉`, "success", "💵");
+        sfx.play("spray");
+      } else if (a.kind === "rest") {
+        const r = await callServer("rest", a.id);
+        if (!r.ok) {
+          toast(r.error || "Couldn't rest.", "warn", "💸");
+          sfx.play("warn");
+          return;
+        }
+        applyActionResult(r.result);
+        toast(a.id === "sleep" ? "You slept well. Energy restored! 😴" : "Vibe restored! ✨", "success");
+        sfx.play("rest");
       }
-      toast(`+${naira(a.reward ?? 0)} earned!`, "success", "💰");
-      sfx.play("cashEarn");
-    } else if (a.kind === "buy") {
-      // Special case: boutique opens shop
-      if (a.id === "boutique") {
-        setShowShop(true);
-        sfx.play("click");
-        return;
-      }
-      const cost = Math.abs(a.reward ?? 0);
-      if (cash < cost) {
-        toast(`Need ${naira(cost)} for this.`, "warn", "💸");
-        sfx.play("warn");
-        return;
-      }
-      workAction(a.id, -cost, 0, 0, 0);
-      if (a.vibeGain) rest(0, a.vibeGain);
-      toast(a.id === "buy-food" ? "Belle don full! 🍽️" : "Paid. Enjoy! ✨", "success");
-      sfx.play("cashSpend");
-    } else if (a.kind === "spray") {
-      const amount = Math.abs(a.reward ?? 0);
-      const ok = spray(amount);
-      if (!ok) {
-        toast(`Not enough cash to spray ${naira(amount)}.`, "warn", "💸");
-        sfx.play("warn");
-        return;
-      }
-      if (a.vibeGain) rest(0, a.vibeGain);
-      toast(`Sprayed ${naira(amount)} at the dance floor! 🎉`, "success", "💵");
-      sfx.play("spray");
-    } else if (a.kind === "rest") {
-      const cost = Math.abs(a.reward ?? 0);
-      if (cost > 0 && cash < cost) {
-        toast(`Need ${naira(cost)} for this.`, "warn", "💸");
-        sfx.play("warn");
-        return;
-      }
-      if (cost > 0) workAction(a.id, -cost, 0, 0, 0);
-      // Sleep recovers energy
-      const energyGain = a.id === "sleep" ? 60 : 0;
-      rest(energyGain, a.vibeGain ?? 0);
-      toast(a.id === "sleep" ? "You slept well. Energy restored! 😴" : "Vibe restored! ✨", "success");
-      sfx.play("rest");
+    } finally {
+      setBusy(false);
     }
   }
 

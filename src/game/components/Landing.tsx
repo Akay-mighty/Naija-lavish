@@ -158,7 +158,7 @@ export default function Landing() {
           No download. Plays in your browser. Saves to your device.
         </motion.p>
 
-        {/* Hero illustration: simple isometric mock of the city */}
+        {/* Hero illustration: simple isometric illustration of the city */}
         <motion.div
           initial={{ opacity: 0, y: 24, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -271,7 +271,7 @@ export default function Landing() {
 }
 
 function CityIllustration() {
-  // Simple SVG city mock — green field, roads, building blocks
+  // Simple SVG city illustration — green field, roads, building blocks
   return (
     <svg viewBox="0 0 800 450" className="absolute inset-0 w-full h-full">
       <defs>

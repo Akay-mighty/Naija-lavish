@@ -5,6 +5,9 @@ import * as THREE from "three";
 import { PLACES, type Place } from "../data/places";
 import { hexToInt } from "../lib/format";
 import { usePlayer, activeLook } from "../store/usePlayer";
+import { useAuth } from "../store/useAuth";
+import { rtdb } from "@/lib/firebase";
+import { ref, set as rtdbSet, serverTimestamp as rtdbNow } from "firebase/database";
 
 interface Scene3DProps {
   // Trigger a camera pan + character walk to this place id when changed
@@ -31,6 +34,7 @@ export default function Scene3D({ targetPlaceId, onArrive }: Scene3DProps) {
   });
   const walkTargetRef = useRef<THREE.Vector3 | null>(null);
   const rafRef = useRef<number>(0);
+  const lastPresencePushRef = useRef<number>(0);
   // Use refs for things we don't want to trigger re-renders
   const setMoveChar = useRef(usePlayer.getState().moveCharacter).current;
   const setPlaceRef = useRef(usePlayer.getState().setPlace).current;
@@ -375,9 +379,21 @@ export default function Scene3D({ targetPlaceId, onArrive }: Scene3DProps) {
             lastPlaceSentRef.current = closest.id;
             setMoveChar(target.x, target.z, charGroup.rotation.y);
             setPlaceRef(closest.id);
+            // Update RTDB presence (placeId + position)
+            const s = usePlayer.getState();
+            const a = useAuth.getState();
+            if (a.uid) {
+              void rtdbSet(ref(rtdb, `presence/${a.uid}`), {
+                uid: a.uid,
+                name: s.name || "Player",
+                lookId: s.lookId,
+                placeId: closest.id,
+                x: target.x, z: target.z, ry: charGroup.rotation.y,
+                anim: "idle",
+                t: rtdbNow(),
+              });
+            }
             // Notify listeners (e.g. Game.tsx) that the character has arrived.
-            // We use a CustomEvent instead of a callback prop to avoid stale
-            // closure issues with the animation loop set up in useEffect([]).
             try {
               window.dispatchEvent(
                 new CustomEvent("naijalavish:arrive", { detail: { placeId: closest.id } })
@@ -405,6 +421,24 @@ export default function Scene3D({ targetPlaceId, onArrive }: Scene3DProps) {
           legR.rotation.x = -Math.sin(t * 12) * 0.5;
           // Sync store
           setMoveChar(charGroup.position.x, charGroup.position.z, angle);
+          // Throttled RTDB presence update (max 4/sec while walking)
+          const nowMs = performance.now();
+          if (nowMs - lastPresencePushRef.current > 250) {
+            lastPresencePushRef.current = nowMs;
+            const s = usePlayer.getState();
+            const a = useAuth.getState();
+            if (a.uid) {
+              void rtdbSet(ref(rtdb, `presence/${a.uid}`), {
+                uid: a.uid,
+                name: s.name || "Player",
+                lookId: s.lookId,
+                placeId: s.placeId,
+                x: charGroup.position.x, z: charGroup.position.z, ry: angle,
+                anim: "walk",
+                t: rtdbNow(),
+              });
+            }
+          }
         }
       } else {
         // Idle breathing

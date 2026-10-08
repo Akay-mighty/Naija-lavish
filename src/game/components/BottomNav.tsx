@@ -1,7 +1,5 @@
 "use client";
 
-import { usePlayer } from "../store/usePlayer";
-
 interface BottomNavProps {
   active: "home" | "map" | "people" | "phone" | "hide";
   onNav: (id: "home" | "map" | "people" | "phone" | "hide") => void;
@@ -52,8 +50,6 @@ const LABELS: Record<BottomNavProps["active"], string> = {
 };
 
 export default function BottomNav({ active, onNav }: BottomNavProps) {
-  const chatUnread = usePlayer((s) => s.chat.length);
-
   return (
     <nav
       className="fixed bottom-0 left-0 right-0 z-30 flex items-stretch justify-around px-1 pt-1 pb-[max(8px,env(safe-area-inset-bottom))] backdrop-blur"
@@ -93,14 +89,6 @@ export default function BottomNav({ active, onNav }: BottomNavProps) {
             >
               {LABELS[id]}
             </span>
-            {id === "phone" && chatUnread > 0 && (
-              <span
-                className="absolute top-1 right-[28%] text-[9px] font-bold bg-red-500 text-white rounded-full px-1.5 py-0.5"
-                style={{ minWidth: 14, textAlign: "center" }}
-              >
-                {chatUnread > 9 ? "9+" : chatUnread}
-              </span>
-            )}
           </button>
         );
       })}

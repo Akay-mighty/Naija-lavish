@@ -3,34 +3,30 @@
 import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  listenToPlayers,
+  listenToAllPlayers,
   listenToAdminActions,
-  adminUpdatePlayer,
-  logAdminAction,
-  type PlayerDoc,
+  type PlayerProfile,
   type AdminAction,
 } from "@/lib/firestore";
+import { useAuth } from "@/game/store/useAuth";
 import { naira, shortNaira } from "@/game/lib/format";
-
-// ⚠️ MVP SECURITY NOTE:
-// Admin credentials are hardcoded for the MVP. For production, replace with:
-//   1. Firebase Auth (email/password) — create an admin user in Firebase console
-//   2. Use Firebase Security Rules to restrict writes to authenticated admins
-//   3. Or move admin operations to Cloud Functions
-// To change: edit ADMIN_EMAIL / ADMIN_PASSWORD below, then redeploy.
-const ADMIN_EMAIL = "akay@naijalavish.com";
-const ADMIN_PASSWORD = "363438";
-const ADMIN_ID = "admin";
 
 type Tab = "overview" | "players" | "actions" | "settings";
 
-type PlayerWithId = { id: string } & PlayerDoc;
+type PlayerWithId = { id: string } & PlayerProfile;
 
 export default function AdminDashboard() {
-  const [authed, setAuthed] = useState(false);
+  // Firebase Auth-backed admin login
+  const isAdmin = useAuth((s) => s.isAdmin);
+  const signInAdmin = useAuth((s) => s.signInAdmin);
+  const signOut = useAuth((s) => s.signOut);
+  const idToken = useAuth((s) => s.idToken);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loggingIn, setLoggingIn] = useState(false);
+
   const [tab, setTab] = useState<Tab>("overview");
   const [players, setPlayers] = useState<PlayerWithId[]>([]);
   const [actions, setActions] = useState<AdminAction[]>([]);
@@ -41,11 +37,10 @@ export default function AdminDashboard() {
 
   // Load players + actions in real-time when authed
   useEffect(() => {
-    if (!authed) return;
+    if (!isAdmin) return;
     setLoading(true);
     setFirestoreError(null);
 
-    // Timeout: if no data after 8 seconds, show setup hint
     const timeout = setTimeout(() => {
       if (loading) {
         setFirestoreError(
@@ -55,7 +50,7 @@ export default function AdminDashboard() {
       }
     }, 8000);
 
-    const unsubPlayers = listenToPlayers((p) => {
+    const unsubPlayers = listenToAllPlayers((p) => {
       setPlayers(p);
       setLoading(false);
       setFirestoreError(null);
@@ -66,100 +61,43 @@ export default function AdminDashboard() {
       unsubPlayers();
       unsubActions();
     };
-  }, [authed]);
+  }, [isAdmin]);
 
-  function login() {
-    // Case-insensitive email match, exact password match
-    if (
-      email.trim().toLowerCase() === ADMIN_EMAIL &&
-      password === ADMIN_PASSWORD
-    ) {
-      setAuthed(true);
-      setError("");
-      setEmail("");
-      setPassword("");
-    } else {
-      setError("Wrong email or password. Try again.");
-    }
+  async function login() {
+    setError("");
+    setLoggingIn(true);
+    const res = await signInAdmin(email.trim().toLowerCase(), password);
+    if (!res.ok) setError(res.error || "Login failed.");
+    setLoggingIn(false);
   }
 
   function logout() {
-    setAuthed(false);
+    signOut();
     setTab("overview");
   }
 
-  // ---- Admin actions ----
-  async function credit(player: PlayerWithId, amount: number) {
-    if (!amount || amount <= 0) return;
-    await adminUpdatePlayer(player.id, { cash: (player.cash || 0) + amount });
-    await logAdminAction({
-      adminId: ADMIN_ID,
-      playerId: player.id,
-      playerName: player.name,
-      action: "credit",
-      field: "cash",
-      amount,
-      note: `Credited ${naira(amount)} to wallet`,
-    });
+  // ---- Admin actions (call server routes) ----
+  async function adminAction(player: PlayerWithId, action: string, field?: string, amount?: number) {
+    if (!idToken) return;
+    try {
+      const res = await fetch(`/api/admin/player/${player.id}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ action, field, amount }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "Action failed.");
+    } catch (e: any) {
+      setError(e?.message || "Action failed.");
+    }
   }
 
-  async function debit(player: PlayerWithId, amount: number) {
-    if (!amount || amount <= 0) return;
-    const newCash = Math.max(0, (player.cash || 0) - amount);
-    await adminUpdatePlayer(player.id, { cash: newCash });
-    await logAdminAction({
-      adminId: ADMIN_ID,
-      playerId: player.id,
-      playerName: player.name,
-      action: "debit",
-      field: "cash",
-      amount,
-      note: `Debited ${naira(amount)} from wallet`,
-    });
-  }
-
-  async function setNeed(player: PlayerWithId, need: "hunger" | "energy" | "vibe", value: number) {
-    await adminUpdatePlayer(player.id, { [need]: value } as Partial<PlayerDoc>);
-    await logAdminAction({
-      adminId: ADMIN_ID,
-      playerId: player.id,
-      playerName: player.name,
-      action: "setNeed",
-      field: need,
-      amount: value,
-      note: `Set ${need} to ${value}`,
-    });
-  }
-
-  async function toggleBan(player: PlayerWithId) {
-    const newBanned = !player.banned;
-    await adminUpdatePlayer(player.id, { banned: newBanned });
-    await logAdminAction({
-      adminId: ADMIN_ID,
-      playerId: player.id,
-      playerName: player.name,
-      action: newBanned ? "ban" : "unban",
-      note: newBanned ? "Banned player" : "Unbanned player",
-    });
-  }
-
-  async function resetPlayer(player: PlayerWithId) {
-    await adminUpdatePlayer(player.id, {
-      cash: 5000,
-      bank: 0,
-      hunger: 80,
-      energy: 80,
-      vibe: 70,
-      banned: false,
-    });
-    await logAdminAction({
-      adminId: ADMIN_ID,
-      playerId: player.id,
-      playerName: player.name,
-      action: "reset",
-      note: "Reset to defaults (₦5,000, 80/80/70)",
-    });
-  }
+  // ---- Admin action wrappers (call server) ----
+  const credit = (p: PlayerWithId, amt: number) => adminAction(p, "credit", undefined, amt);
+  const debit = (p: PlayerWithId, amt: number) => adminAction(p, "debit", undefined, amt);
+  const setNeed = (p: PlayerWithId, need: "hunger" | "energy" | "vibe", val: number) => adminAction(p, "setNeed", need, val);
+  const toggleBan = (p: PlayerWithId) => adminAction(p, p.banned ? "unban" : "ban");
+  const resetPlayer = (p: PlayerWithId) => adminAction(p, "reset");
 
   // ---- Filtered players ----
   const filteredPlayers = useMemo(() => {
@@ -182,7 +120,7 @@ export default function AdminDashboard() {
   }, [players]);
 
   // ---- Login screen ----
-  if (!authed) {
+  if (!isAdmin) {
     return (
       <main
         className="min-h-screen w-full flex items-center justify-center p-6"
@@ -264,18 +202,19 @@ export default function AdminDashboard() {
 
           <button
             onClick={login}
-            className="w-full py-3 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700 transition"
+            disabled={loggingIn}
+            className="w-full py-3 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700 transition disabled:opacity-50"
           >
-            Log in →
+            {loggingIn ? "Loading..." : "Log in →"}
           </button>
 
           <div className="mt-6 p-3 rounded-xl bg-amber-50 border border-amber-200">
             <p className="text-[11px] text-amber-800 leading-relaxed">
-              <b>Admin login:</b> <code>akay@naijalavish.com</code>
+              <b>Admin login uses Firebase Auth (email/password).</b>
               <br />
-              <b>⚠️ To change</b> edit <code>ADMIN_EMAIL</code> / <code>ADMIN_PASSWORD</code> in{" "}
-              <code>src/game/components/AdminDashboard.tsx</code>, then redeploy. For production,
-              use Firebase Auth.
+              Create an admin user in the Firebase Console → Authentication →
+              Add user, then add a doc at <code>admins/{`{uid}`}</code> in Firestore
+              with <code>{"{ admin: true }"}</code>.
             </p>
           </div>
 
@@ -650,18 +589,20 @@ export default function AdminDashboard() {
 
                 {/* Admin credentials */}
                 <div className="rounded-2xl bg-white border border-slate-200 p-5 mb-4">
-                  <h3 className="font-semibold text-slate-900 mb-2">Admin credentials</h3>
+                  <h3 className="font-semibold text-slate-900 mb-2">Admin authentication</h3>
                   <p className="text-sm text-slate-600 mb-3">
-                    Current login is hardcoded as:
+                    Admin login uses <b>Firebase Auth (email/password)</b>. The
+                    dashboard verifies the ID token server-side and checks that
+                    a Firestore doc at <code>admins/{`{uid}`}</code> exists.
                   </p>
                   <div className="bg-slate-900 text-slate-100 p-3 rounded-lg text-xs mb-3">
-                    <div><span className="text-slate-400">Email:</span> akay@naijalavish.com</div>
-                    <div><span className="text-slate-400">Password:</span> ••••••</div>
+                    <div><span className="text-slate-400">Auth provider:</span> Firebase Email/Password</div>
+                    <div><span className="text-slate-400">Admin check:</span> admins/{`{uid}`} doc must exist</div>
                   </div>
                   <p className="text-[11px] text-amber-700 bg-amber-50 p-3 rounded-lg">
-                    ⚠️ To change: edit <code>ADMIN_EMAIL</code> and <code>ADMIN_PASSWORD</code> in{" "}
-                    <code>src/game/components/AdminDashboard.tsx</code>, then redeploy.
-                    For production, use Firebase Auth with email/password.
+                    <b>To grant admin access:</b> Create a user in Firebase Console →
+                    Authentication → Add User, then create a Firestore doc at{" "}
+                    <code>admins/{`{uid}`}</code> with content <code>{"{ admin: true }"}</code>.
                   </p>
                 </div>
 
