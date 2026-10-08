@@ -4,8 +4,10 @@ import { create } from "zustand";
 import {
   onAuthStateChanged,
   signInAnonymously,
-  signOut as fbSignOut,
   signInWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
+  signOut as fbSignOut,
   type User,
 } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
@@ -19,11 +21,12 @@ interface AuthState {
   uid: string | null;
   idToken: string | null;
   isAdmin: boolean;
-  isPlayer: boolean;     // profile exists in players/{uid}
-  soloMode: boolean;      // auth failed — fallback to offline solo
+  isPlayer: boolean;
+  soloMode: boolean;
   error: string | null;
 
   signIn: () => Promise<void>;
+  signInWithGoogle: () => Promise<{ ok: boolean; error?: string }>;
   signInAdmin: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   signOut: () => Promise<void>;
   getIdToken: () => Promise<string | null>;
@@ -32,6 +35,8 @@ interface AuthState {
 
 let unsubProfile: (() => void) | null = null;
 let unsubAdmin: (() => void) | null = null;
+
+const googleProvider = new GoogleAuthProvider();
 
 export const useAuth = create<AuthState>((set, get) => ({
   status: "loading",
@@ -55,7 +60,6 @@ export const useAuth = create<AuthState>((set, get) => ({
         soloMode: false,
         error: null,
       });
-      // Listen for player profile creation
       if (unsubProfile) unsubProfile();
       unsubProfile = onSnapshot(
         doc(db, "players", cred.user.uid),
@@ -68,11 +72,33 @@ export const useAuth = create<AuthState>((set, get) => ({
       );
     } catch (e: any) {
       console.warn("[auth] anonymous sign-in failed — solo mode:", e?.message);
+      set({ status: "signed-out", soloMode: true, error: e?.message || "Auth failed" });
+    }
+  },
+
+  signInWithGoogle: async () => {
+    try {
+      const cred = await signInWithPopup(auth, googleProvider);
+      const token = await cred.user.getIdToken();
       set({
-        status: "signed-out",
-        soloMode: true,
-        error: e?.message || "Auth failed",
+        status: "player",
+        user: cred.user,
+        uid: cred.user.uid,
+        idToken: token,
+        soloMode: false,
+        error: null,
       });
+      if (unsubProfile) unsubProfile();
+      unsubProfile = onSnapshot(
+        doc(db, "players", cred.user.uid),
+        (snap) => {
+          set({ isPlayer: snap.exists() });
+          if (snap.exists()) set({ status: "player" });
+        }
+      );
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, error: e?.message || "Google sign-in failed." };
     }
   },
 
@@ -80,9 +106,8 @@ export const useAuth = create<AuthState>((set, get) => ({
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password);
       const token = await cred.user.getIdToken();
-      // Check admins/{uid}
       const adminDoc = await getDoc(doc(db, "admins", cred.user.uid));
-      if (!adminDoc.exists()) {
+      if (!adminDoc.exists) {
         await fbSignOut(auth);
         return { ok: false, error: "Not an admin account." };
       }
@@ -99,10 +124,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       unsubAdmin = onSnapshot(
         doc(db, "admins", cred.user.uid),
         (snap) => {
-          if (!snap.exists()) {
-            // admin privileges revoked
-            set({ isAdmin: false, status: "anon" });
-          }
+          if (!snap.exists()) set({ isAdmin: false, status: "anon" });
         }
       );
       return { ok: true };
@@ -140,9 +162,6 @@ export const useAuth = create<AuthState>((set, get) => ({
 }));
 
 // Subscribe to auth state changes
-// NOTE: `set` only exists inside the create() callback, so module-level code
-// must use useAuth.setState (this was the "set is not defined" crash that left
-// the app stuck on the splash screen forever).
 if (typeof window !== "undefined") {
   onAuthStateChanged(
     auth,
@@ -156,10 +175,8 @@ if (typeof window !== "undefined") {
             uid: user.uid,
             idToken: token,
             soloMode: false,
-            status:
-              cur.status === "admin" ? "admin" : user.isAnonymous ? "anon" : "player",
+            status: cur.status === "admin" ? "admin" : user.isAnonymous ? "anon" : "player",
           });
-          // Check if profile exists (never let a Firestore error block the UI)
           try {
             const snap = await getDoc(doc(db, "players", user.uid));
             if (snap.exists()) {
@@ -172,12 +189,8 @@ if (typeof window !== "undefined") {
             console.warn("[auth] profile check failed:", e?.message);
           }
         } else {
-          // Not signed in — try anonymous sign-in
           const s = useAuth.getState();
           if (s.status !== "admin" && !s.soloMode) {
-            if (s.status === "loading") {
-              // leave "loading" until signIn resolves (it falls back to solo mode on failure)
-            }
             void s.signIn();
           }
         }
@@ -192,7 +205,7 @@ if (typeof window !== "undefined") {
     }
   );
 
-  // Safety net: never sit on the splash screen forever (slow/blocked network)
+  // Safety net: never sit on splash forever
   window.setTimeout(() => {
     if (useAuth.getState().status === "loading") {
       console.warn("[auth] timed out — continuing in solo mode");
