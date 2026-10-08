@@ -1,47 +1,126 @@
 # NaijaLavish
 
-A free multiplayer life-sim game set in Abuja, Nigeria. Built with Next.js 16 + Three.js + TypeScript + Firebase.
+A free, 18+ multiplayer life-sim set in Abuja, Nigeria. Built with Next.js 16 + Three.js + TypeScript + Firebase.
 
 ## Quick start
 
 ```bash
-bun install        # or npm install
-bun run dev        # starts Next.js on http://localhost:3000
+bun install
+bun run dev          # http://localhost:3000
 ```
 
 ## What's in the box
 
 - **Landing page** — Apple-clean hero, features grid, places preview
-- **Title screen** — Sign up / Log in / Play as guest, gender + look picker, adult consent
-- **3D Abuja city** — Three.js top-down map with **12 real places** (Wuse Market, Area 1, Maitama, Transcorp Hilton, Jabi Lake, Millennium Park, Magicland, Berger, Garki, Unity Fountain, National Mosque, Aso Rock, Night Market, City Gate, National Assembly, Home)
-- **Tap-to-walk character** with walk animation, pulsing place markers, day/night cycle
-- **HUD** — Cash pill, Belle/Energy/Vibe need bars, mood emoji, place info, clock, sound toggle
-- **Place sheets** — Hustle actions (bole, okada, danfo, office, bank, suya, senator, photos), buy actions, rest actions, spray actions, cooldowns
-- **Phone UI** — Dark phone shell with 7 apps: Gist (chat), Bank (deposit/withdraw), Wallet (net worth), Boutique (24 items), Photos (Lavish Card), Contacts, Settings
-- **Real-time multiplayer chat** — Firebase Firestore-backed, players see each other's messages live
-- **Presence** — Real-time online player list, see who's at your spot vs elsewhere
-- **Day/night cycle** — 1 game day = 2.4 minutes real time. Sun/moon orbit the sky, lights change color, dusk/dawn glow
-- **Sound effects** — Web Audio API tones for cash earn/spend, spray, arrival, chat, warnings, ban, rest, phone vibration. Toggle in HUD
-- **Admin dashboard** at `/?admin=1` — Email/password login (`akay@naijalavish.com` / `363438`), real-time stats, player table with credit/debit/set-need/ban/reset, action log, settings
+- **Title screen** — Date-of-birth age gate (18+), gender + look picker, anonymous Firebase Auth sign-up
+- **3D Abuja city** — Three.js top-down map with real Abuja places
+- **Tap-to-walk character** + day/night cycle + sound effects (Web Audio API)
+- **HUD** — Cash, Belle/Energy/Vibe need bars, mood, clock, sound toggle
+- **Place sheets** — Hustle (bole, okada, danfo, office, bank, suya, senator, photos), buy, rest, spray
+- **Phone UI** — Gist (chat), Bank (deposit/withdraw), Wallet, Boutique, Photos, Contacts, Settings
+- **Real-time multiplayer chat** — Firestore-backed, server-validated (rate limit + word filter)
+- **Real-time presence** — RTDB-backed, see who's online + where they are
+- **Admin dashboard** at `/?admin=1` — Firebase Auth email/password, real-time player table, credit/debit/set-need/ban/unban/reset, audit log
 
 ## Tech stack
 
 - **Framework**: Next.js 16 (App Router) + TypeScript 5
-- **Styling**: Tailwind CSS 4 + shadcn/ui
+- **Styling**: Tailwind CSS 4
 - **3D**: Three.js
 - **Animation**: Framer Motion
-- **State**: Zustand + localStorage persistence
-- **Backend**: Firebase (Firestore for players + chat + presence + admin actions)
-- **Sound**: Web Audio API (no asset files needed)
+- **State**: Zustand + localStorage (client mirror of server profile)
+- **Backend**: Firebase (Auth + Firestore + Realtime Database)
+- **Server routes**: Next.js route handlers (Node.js runtime) + firebase-admin
+- **Sound**: Web Audio API (no asset files)
 
-## Firebase setup (required for multiplayer features)
+## Firebase setup (required)
 
-1. Go to [Firebase Console](https://console.firebase.google.com/project/naijalavish/firestore)
-2. Enable Firestore Database (production mode, pick a location close to your users)
-3. Set security rules (see Settings tab in admin dashboard for template)
-4. Players will sync in real-time once enabled
+### 1. Enable Firestore + Realtime Database
 
-The game works fully offline (localStorage only) until Firestore is enabled.
+1. Go to [Firebase Console → naijalavish](https://console.firebase.google.com/project/naijalavish)
+2. Enable **Firestore Database** (production mode)
+3. Enable **Realtime Database** (create `https://naijalavish-default-rtdb.firebaseio.com`)
+4. Enable **Authentication** → Sign-in method: **Anonymous** + **Email/Password**
+
+### 2. Firestore Security Rules
+
+Set these in Firebase Console → Firestore → Rules:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Players: client may only update name, username, lookId, gender, placeId, lastSeen
+    // All other fields (cash, bank, banned, adult, etc.) are server-only via API routes
+    match /players/{uid} {
+      allow read: if true;
+      allow create: if false;  // only /api/player/init creates
+      allow update: if request.auth.uid == uid &&
+        request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly(['name', 'username', 'lookId', 'gender', 'placeId', 'lastSeen']);
+    }
+
+    // Chat: client read-only, writes via /api/chat only
+    match /chat/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Admin docs: admin only (verified by admins/{uid} check server-side)
+    match /admins/{uid} {
+      allow read: if request.auth.uid == uid;
+      allow write: if false;  // create via Firebase Console
+    }
+
+    match /adminActions/{id} {
+      allow read: if false;
+      allow write: if false;
+    }
+
+    // Events (sprays etc.): server-written, client read
+    match /events/{placeId}/{type}/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}
+```
+
+### 3. Realtime Database Rules
+
+Set these in Firebase Console → Realtime Database → Rules:
+
+```json
+{
+  "rules": {
+    "presence": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth.uid == $uid"
+      }
+    }
+  }
+}
+```
+
+### 4. Admin user setup
+
+1. Firebase Console → Authentication → Add User (email/password)
+2. Copy the new user's `uid`
+3. Firestore → Create document at `admins/{uid}` with content `{ admin: true }`
+4. Log in at `/?admin=1` with the email/password
+
+### 5. Firebase Admin service account
+
+The server routes need a Firebase Admin service account to verify ID tokens + write to Firestore.
+
+1. Firebase Console → Project Settings → Service Accounts → **Generate new private key**
+2. Open `src/lib/server/serviceAccount.ts`
+3. Replace the placeholder fields with your real values from the JSON
+
+**Important**: This file is imported ONLY from `src/app/api/*` route handlers (server-side). Never import it from a client component.
 
 ## Deploy to Vercel
 
@@ -49,63 +128,78 @@ The game works fully offline (localStorage only) until Firestore is enabled.
 git push origin main
 ```
 
-Vercel auto-detects Next.js. No env vars needed (Firebase config is in `src/lib/firebase.ts`).
-
-## Admin access
-
-Visit `https://your-domain.vercel.app/?admin=1`
-
-- **Email**: `akay@naijalavish.com`
-- **Password**: `363438`
-
-To change credentials: edit `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `src/game/components/AdminDashboard.tsx`.
+Vercel auto-detects Next.js. No env vars needed — Firebase client config is hardcoded in `src/lib/firebase.ts`, and the admin service account is in `src/lib/server/serviceAccount.ts`.
 
 ## File structure
 
 ```
 src/
   app/
-    layout.tsx         Poppins font, SEO metadata, viewport
-    page.tsx           ?admin=1 detection, screen routing
-    globals.css        NaijaLavish theme (green + gold)
+    layout.tsx              Poppins font, SEO metadata, viewport
+    page.tsx                ?admin=1 detection, auth gate, screen routing
+    globals.css             NaijaLavish theme (green + gold)
+    api/
+      player/init/route.ts  Create player profile (server, ID-token verified)
+      action/route.ts       Work/buy/spray/bank/rest (server, transaction-safe)
+      chat/route.ts         Send chat (server, rate-limited + word-filtered)
+      daily/route.ts        Daily reward (Africa/Lagos day, 7-day streak)
+      admin/
+        login/route.ts      Admin login endpoint
+        player/[uid]/route.ts  Admin writes to player (credit/debit/ban/etc)
+        players/route.ts    List all players
+        actions/route.ts    List admin audit log
   lib/
-    firebase.ts        Firebase init with provided config
-    firestore.ts       Player sync, real-time chat, presence, admin actions
+    firebase.ts             Client Firebase init (Auth + Firestore + RTDB)
+    firestore.ts            Client service layer (read + limited writes)
+    server/
+      serviceAccount.ts     PLACEHOLDER — replace with your Firebase Admin key
+      admin.ts              firebase-admin init (server-only)
+      guards.ts             Token verification + ban/admin checks
   game/
     data/
-      places.ts        12 Abuja places + 8 hustle job types
-      items.ts         24 boutique items + 6 character looks
-      npcs.ts          18 NPCs, quick lines, stickers, rich list
+      places.ts             Abuja places + hustle actions
+      items.ts              Boutique items + character looks
+      npcs.ts               World NPCs (speech bubbles, NOT chat writers)
+      wordfilter.ts         Chat word filter
     store/
-      usePlayer.ts     Zustand store (localStorage-persisted)
-      useToasts.ts     Toast notification store
+      usePlayer.ts          Zustand store (mirrors server profile)
+      useAuth.ts            Firebase Auth state + admin check
+      useToasts.ts          Toast notifications
     lib/
-      format.ts        Naira formatting, clock, color utils
-      sound.ts         Web Audio API SoundManager
+      format.ts             Naira formatting, clock, color utils
+      sound.ts              Web Audio API SoundManager
+    three/
+      avatar.ts             Shared avatar factory (local + remote players)
     components/
-      Landing.tsx      Hero, features, places preview
-      TitleScreen.tsx   Signup/login/guest
-      Game.tsx         Master shell, listen for arrive events, day/night tick
-      Scene3D.tsx      Three.js city + character + day/night cycle
-      HUD.tsx          Cash, needs, mood, place, clock, sound toggle
-      BottomNav.tsx    Home/Map/People/Phone/Hide
-      PlaceSheet.tsx   Actions for current place (with SFX)
-      MapSheet.tsx     Place picker
-      PeopleSheet.tsx  Real online players + NPCs + rich list
-      Phone.tsx        7-app phone UI
-      Chat.tsx         Real-time Firestore-backed chat
-      Toasts.tsx       Toast notifications
-      AdminDashboard.tsx  Full admin control panel
+      Landing.tsx           Hero, features, places preview
+      TitleScreen.tsx       DOB age gate + signup
+      Game.tsx              Master shell, auth + presence init
+      Scene3D.tsx            Three.js city + character + presence writes
+      HUD.tsx               Cash, needs, mood, clock, sound toggle
+      BottomNav.tsx          Home/Map/People/Phone/Hide
+      PlaceSheet.tsx         Actions (calls /api/action)
+      MapSheet.tsx           Place picker
+      PeopleSheet.tsx        Real online players + NPCs
+      Phone.tsx             7-app phone UI (Bank calls /api/action)
+      Chat.tsx               Real-time Firestore chat + Share empty state
+      Toasts.tsx             Toast notifications
+      AdminDashboard.tsx     Firebase Auth admin login + player table
 public/
-  manifest.webmanifest PWA manifest
-  icon-48.png, icon-180.png  Brand icons
-vercel.json             Framework config + security headers
+  manifest.webmanifest      PWA manifest
+  icon-48.png, icon-180.png Brand icons
+vercel.json                 Framework config + security headers
 ```
 
-## Security notes
+## Security model
 
-- Admin password is hardcoded (MVP). For production: use Firebase Auth
-- Firestore rules in test mode allow all reads/writes. Lock down before going public
-- No real money is involved. Players start with ₦5,000 fake naira
+- **Client never writes cash/bank/banned/adult** — only the server (via route handlers) can
+- **Player profile** — client may only update name, username, lookId, gender, placeId, lastSeen (enforced by Firestore rules)
+- **Chat** — server validates rate limit (1 per 2s) + word filter (English + pidgin insults, phone numbers, emails, links)
+- **Actions** (work/buy/spray/bank/rest) — validated server-side inside Firestore transactions (cooldown, cost, location)
+- **Admin** — Firebase email/password + `admins/{uid}` Firestore doc check on every request
+
+## Solo mode
+
+If anonymous auth fails (network blocked), the game falls back to **solo mode** with a clear "Offline" badge. Chat + multiplayer are disabled, but the world + NPCs still work.
 
 Made with love for Naija. 🇳🇬
