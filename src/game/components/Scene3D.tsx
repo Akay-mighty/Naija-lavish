@@ -7,12 +7,17 @@ import { hexToInt } from "../lib/format";
 import { usePlayer, activeLook } from "../store/usePlayer";
 import { useAuth } from "../store/useAuth";
 import { rtdb } from "@/lib/firebase";
-import { ref, set as rtdbSet, serverTimestamp as rtdbNow, onDisconnect } from "firebase/database";
+import {
+  ref as dbRef,
+  set as dbWrite,
+  serverTimestamp as dbNow,
+  onDisconnect as dbOnDisconnect,
+} from "firebase/database";
 import { buildAvatar, recolorAvatar, animateAvatar, buildNameTag } from "../three/avatar";
 import { buildPlace } from "../three/city";
 import { buildGround, buildInstancedProps, buildBillboards, buildAmbientTraffic, type TrafficSystem } from "../three/props";
 import { RemotePlayers } from "../three/remotePlayers";
-import { QUALITY_CONFIG, loadQuality, saveQuality, FpsMonitor, type Quality } from "../three/quality";
+import { QUALITY_CONFIG, loadQuality, FpsMonitor, type Quality } from "../three/quality";
 
 interface Scene3DProps {
   targetPlaceId: string | null;
@@ -252,10 +257,10 @@ export default function Scene3D({ targetPlaceId }: Scene3DProps) {
             const s = usePlayer.getState();
             const a = useAuth.getState();
             if (a.uid) {
-              void rtdbSet(ref(rtdb, `presence/${a.uid}`), {
+              void dbWrite(dbRef(rtdb, `presence/${a.uid}`), {
                 uid: a.uid, name: s.name || "Player", lookId: s.lookId,
                 placeId: closest.id, x: target.x, z: target.z, ry: charRef.current.rotation.y,
-                anim: "idle", t: rtdbNow(),
+                anim: "idle", t: dbNow(),
               });
             }
             try {
@@ -289,10 +294,10 @@ export default function Scene3D({ targetPlaceId }: Scene3DProps) {
             const s = usePlayer.getState();
             const a = useAuth.getState();
             if (a.uid) {
-              void rtdbSet(ref(rtdb, `presence/${a.uid}`), {
+              void dbWrite(dbRef(rtdb, `presence/${a.uid}`), {
                 uid: a.uid, name: s.name || "Player", lookId: s.lookId,
                 placeId: s.placeId, x: charRef.current.position.x, z: charRef.current.position.z, ry: angle,
-                anim: "walk", t: rtdbNow(),
+                anim: "walk", t: dbNow(),
               });
             }
           }
@@ -452,7 +457,7 @@ export default function Scene3D({ targetPlaceId }: Scene3DProps) {
     // ---- onDisconnect for presence ----
     const a = useAuth.getState();
     if (a.uid) {
-      onDisconnect(ref(rtdb, `presence/${a.uid}`)).remove();
+      dbOnDisconnect(dbRef(rtdb, `presence/${a.uid}`)).remove();
     }
 
     // ---- Cleanup ----
