@@ -13,8 +13,16 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
+    // Log the incoming request for debugging
+    const authHeader = req.headers.get("authorization") || "";
+    console.log("[/api/player/init] request received, auth header:", authHeader ? "present" : "missing");
+
     const token = await requireToken(req);
-    if (!token.ok) return token.res;
+    if (!token.ok) {
+      console.log("[/api/player/init] requireToken failed:", token.res.status);
+      return token.res;
+    }
+    console.log("[/api/player/init] token OK, uid:", token.uid);
 
     const body = await req.json().catch(() => ({}));
     const name = String(body.name || "").trim().slice(0, 16);
@@ -27,9 +35,11 @@ export async function POST(req: Request) {
     if (!adult) return error("You must be 18+ to play.", 403);
     if (username && !/^[a-z0-9_]+$/.test(username)) return error("Username: letters, numbers, _ only.", 400);
 
+    console.log("[/api/player/init] creating player profile for uid:", token.uid);
     const ref = adminDb().doc(`players/${token.uid}`);
     const existing = await ref.get();
     if (existing.exists) {
+      console.log("[/api/player/init] profile already exists");
       return json({ ok: true, player: existing.data() });
     }
 
@@ -57,9 +67,11 @@ export async function POST(req: Request) {
       quest: { step: 0, completed: [] },
     };
     await ref.set(profile);
+    console.log("[/api/player/init] profile created successfully");
     return json({ ok: true, player: profile });
   } catch (e: any) {
-    console.error("[/api/player/init] error:", e?.message);
+    console.error("[/api/player/init] CAUGHT ERROR:", e?.message || e);
+    console.error("[/api/player/init] stack:", e?.stack);
     return error(e?.message || "Server error.", 500);
   }
 }
