@@ -1,30 +1,36 @@
-// src/game/data/quests.ts — 9-step quest chain for new players.
-// Each step has a hint and a reward. Reward is paid ONLY after the server
-// verifies the step really happened (via the API route).
+// Quest progression for NaijaLavish.
+// Each step has: id, label, hint, reward, verify function.
+// The verify happens server-side (POST /api/player/quest), so the client
+// can't skip steps. The server checks players/{uid}.quest.completed + the
+// actual action that triggered the claim.
 
 export interface QuestStep {
-  id: number;
-  title: string;
+  id: string;
+  label: string;
   hint: string;
-  reward: number; // naira
-  verifyAction: string; // the API action the server checks
+  reward: number;
+  // Server-side verification trigger:
+  //   - "place" : arrived at placeId (server checks placeId in player doc)
+  //   - "action" : actionId happened (server checks cooldowns last fire time)
+  //   - "chat" : sent a chat message (server checks cooldowns.chat)
+  //   - "bank" : did a bank transfer
+  verify: {
+    type: "place" | "action" | "chat" | "bank" | "look";
+    placeId?: string;
+    actionId?: string;
+  };
 }
 
 export const QUEST_STEPS: QuestStep[] = [
-  { id: 1, title: "Bucket Bath", hint: "Tap Phone > Health to take a bucket bath", reward: 200, verifyAction: "bath" },
-  { id: 2, title: "Change Clothes", hint: "Tap Phone > Settings to change your look", reward: 200, verifyAction: "wardrobe" },
-  { id: 3, title: "Eat Food", hint: "Tap Phone > Buka to buy food", reward: 300, verifyAction: "buka" },
-  { id: 4, title: "Go to Wuse Market", hint: "Tap Map at the bottom, then tap Wuse Market", reward: 500, verifyAction: "visit:wuse-market" },
-  { id: 5, title: "Roast Bole", hint: "Work at the market to earn some cash", reward: 500, verifyAction: "work" },
-  { id: 6, title: "Deposit Money", hint: "Tap Phone > Bank to deposit your cash", reward: 500, verifyAction: "bank-deposit" },
-  { id: 7, title: "Visit the Owambe", hint: "Go to the Owambe Hall to join the party", reward: 1000, verifyAction: "visit:owambe" },
-  { id: 8, title: "Spray N500", hint: "Tap the dance floor and spray N500 at the owambe", reward: 1000, verifyAction: "spray" },
-  { id: 9, title: "Say Hello in Chat", hint: "Tap the chat bar at the bottom and type a message", reward: 1500, verifyAction: "chat" },
+  { id: "q1-bath",   label: "Take a bucket bath",   hint: "Go to Home → Bath to freshen up.", reward: 200, verify: { type: "action", actionId: "bath" } },
+  { id: "q2-look",   label: "Change your clothes",   hint: "Open Phone → Boutique, buy an item, equip it.", reward: 300, verify: { type: "look" } },
+  { id: "q3-eat",    label: "Eat to fill your belle", hint: "Buy foodstuff at Wuse Market.", reward: 200, verify: { type: "action", actionId: "buy-food" } },
+  { id: "q4-wuse",   label: "Visit Wuse Market",    hint: "Tap Map at the bottom → Wuse Market → Walk here.", reward: 200, verify: { type: "place", placeId: "wuse-market" } },
+  { id: "q5-bole",   label: "Roast bole at the market", hint: "At Wuse Market, tap 'Roast & sell bole'.", reward: 500, verify: { type: "action", actionId: "bole" } },
+  { id: "q6-bank",   label: "Deposit money in the bank", hint: "Open Phone → Bank → Deposit.", reward: 200, verify: { type: "bank" } },
+  { id: "q7-owambe", label: "Visit the owambe",     hint: "Tap Map → Transcorp Hilton → Walk here.", reward: 300, verify: { type: "place", placeId: "transcorp" } },
+  { id: "q8-spray",  label: "Spray ₦500 at the owambe", hint: "At Transcorp Hilton, tap 'Spray ₦500'.", reward: 500, verify: { type: "action", actionId: "spray-200" } },
+  { id: "q9-hello",  label: "Say hello in chat",     hint: "Type a message in the chat box below.", reward: 300, verify: { type: "chat" } },
 ];
 
-export const TOTAL_QUEST_REWARD = QUEST_STEPS.reduce((sum, s) => sum + s.reward, 0);
-
-export function getCurrentStep(questProgress: number): QuestStep | null {
-  if (questProgress >= QUEST_STEPS.length) return null;
-  return QUEST_STEPS[questProgress];
-}
+export const TOTAL_QUEST_REWARD = QUEST_STEPS.reduce((acc, s) => acc + s.reward, 0);
