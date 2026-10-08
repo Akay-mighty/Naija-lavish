@@ -340,6 +340,88 @@ export default function CityScene({
       };
     }
 
+    // === AMBIENT TRAFFIC (instanced taxis on loops) ===
+    const taxiMat = new THREE.MeshStandardMaterial({ color: 0xf5ead0, roughness: 0.5 });
+    const taxiGeo = new THREE.BoxGeometry(0.6, 0.3, 1.0);
+    const taxiRoutes = [
+      { axis: "x" as const, z: -1.5, speed: 3, range: [-22, 22] },
+      { axis: "x" as const, z: 1.5, speed: -2.5, range: [-22, 22] },
+      { axis: "z" as const, x: -1.5, speed: 2, range: [-16, 16] },
+      { axis: "z" as const, x: 1.5, speed: -3, range: [-16, 16] },
+    ];
+    const taxis = taxiRoutes.map((route) => {
+      const mesh = new THREE.Mesh(taxiGeo, taxiMat);
+      mesh.position.y = 0.25;
+      mesh.castShadow = true;
+      if (route.axis === "x") { mesh.position.x = route.range[0]; mesh.position.z = route.z; }
+      else { mesh.position.z = route.range[0]; mesh.position.x = route.x; }
+      mesh.rotation.y = route.axis === "x" ? (route.speed > 0 ? 0 : Math.PI) : (route.speed > 0 ? Math.PI / 2 : -Math.PI / 2);
+      scene.add(mesh);
+      return { mesh, route, progress: Math.random() };
+    });
+
+    // === STREET LAMPS (emissive at night) ===
+    const lampPosts: THREE.Mesh[] = [];
+    const lampMat = new THREE.MeshStandardMaterial({
+      color: 0x2b1810,
+      emissive: 0xf5d77a,
+      emissiveIntensity: 0,
+      roughness: 0.4,
+    });
+    const lampPositions = [
+      [-5, -5], [5, 5], [-5, 5], [5, -5], [-10, 0], [10, 0], [0, -10], [0, 10],
+    ];
+    lampPositions.forEach(([x, z]) => {
+      // Pole
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.06, 0.08, 2.5, 6),
+        new THREE.MeshStandardMaterial({ color: 0x2b1810, roughness: 0.8 })
+      );
+      pole.position.set(x, 1.25, z);
+      pole.castShadow = true;
+      scene.add(pole);
+      // Lamp head (emissive sphere)
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 8), lampMat);
+      head.position.set(x, 2.6, z);
+      scene.add(head);
+      lampPosts.push(head);
+    });
+
+    // === PINCH ZOOM ===
+    let cameraDistance = 32; // current distance from target
+    const minZoom = 18;
+    const maxZoom = 48;
+    const initialDistance = 32;
+    let pinchStartDist = 0;
+    let pinchStartZoom = cameraDistance;
+
+    function onTouchStart(e: TouchEvent) {
+      if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        pinchStartDist = Math.sqrt(dx * dx + dy * dy);
+        pinchStartZoom = cameraDistance;
+      }
+    }
+    function onTouchMove(e: TouchEvent) {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const delta = (dist - pinchStartDist) * 0.1;
+        cameraDistance = Math.max(minZoom, Math.min(maxZoom, pinchStartZoom - delta));
+      }
+    }
+    // Wheel zoom for desktop
+    function onWheel(e: WheelEvent) {
+      e.preventDefault();
+      cameraDistance = Math.max(minZoom, Math.min(maxZoom, cameraDistance + e.deltaY * 0.02));
+    }
+    renderer.domElement.addEventListener("touchstart", onTouchStart, { passive: true });
+    renderer.domElement.addEventListener("touchmove", onTouchMove, { passive: false });
+    renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
+
     // === ANIMATION LOOP ===
     let raf = 0;
     const clock = new THREE.Clock();
@@ -414,12 +496,56 @@ export default function CityScene({
         armR.rotation.x = 0;
       }
 
-      // Camera follow (damped)
+      // Street lamp glow (emissive at night)
+      lampPosts.forEach((lamp) => {
+        (lamp.material as THREE.MeshStandardMaterial).emissiveIntensity = params.isNight ? 0.8 : 0;
+      });
+
+      // Ambient traffic — taxis loop along roads
+      taxis.forEach((taxi) => {
+        const { route, mesh } = taxi;
+        taxi.progress += dt * 0.01 * Math.abs(route.speed);
+        if (taxi.progress > 1) taxi.progress -= 1;
+        const pos = route.range[0] + (route.range[1] - route.range[0]) * taxi.progress;
+        if (route.axis === "x") mesh.position.x = pos;
+        else mesh.position.z = pos;
+      });
+
+      // Camera follow (damped) with pinch-zoom distance
       const targetCamX = charGroup.position.x * 0.5 + (isWalking ? 0 : Math.sin(t * 0.08) * 0.4);
-      const targetCamZ = charGroup.position.z * 0.5 + 28;
+      const targetCamZ = charGroup.position.z * 0.5 + cameraDistance * 0.88;
+      const targetCamY = cameraDistance * 0.94;
       camera.position.x += (targetCamX - camera.position.x) * 0.04;
       camera.position.z += (targetCamZ - camera.position.z) * 0.04;
+      camera.position.y += (targetCamY - camera.position.y) * 0.04;
       camera.lookAt(charGroup.position.x * 0.5, 1, charGroup.position.z * 0.5);
+
+      // Building fade — buildings between camera and character become translucent
+      const camPos = camera.position.clone();
+      const charPos = new THREE.Vector3(charGroup.position.x, 1, charGroup.position.z);
+      const camToChar = new THREE.Vector3().subVectors(charPos, camPos).normalize();
+      placeGroups.forEach((group) => {
+        const buildingPos = new THREE.Vector3(group.position.x, 2, group.position.z);
+        const camToBuilding = new THREE.Vector3().subVectors(buildingPos, camPos);
+        const distAlongRay = camToBuilding.dot(camToChar);
+        const perpDist = camToBuilding.clone().sub(camToChar.clone().multiplyScalar(distAlongRay)).length();
+        // If building is between camera and character (along the view ray) and close to the ray
+        const isBlocking = distAlongRay > 2 && distAlongRay < camPos.distanceTo(charPos) - 1 && perpDist < 2.5;
+        group.traverse((obj) => {
+          if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
+            const targetOpacity = isBlocking ? 0.3 : 1.0;
+            const currentOpacity = obj.material.opacity;
+            if (Math.abs(currentOpacity - targetOpacity) > 0.01) {
+              obj.material.transparent = isBlocking || currentOpacity < 1;
+              obj.material.opacity += (targetOpacity - currentOpacity) * 0.1;
+              if (obj.material.opacity > 0.99 && !isBlocking) {
+                obj.material.opacity = 1;
+                obj.material.transparent = false;
+              }
+            }
+          }
+        });
+      });
 
       renderer.render(scene, camera);
     }
@@ -439,6 +565,9 @@ export default function CityScene({
       cancelAnimationFrame(raf);
       ro.disconnect();
       renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+      renderer.domElement.removeEventListener("touchstart", onTouchStart);
+      renderer.domElement.removeEventListener("touchmove", onTouchMove);
+      renderer.domElement.removeEventListener("wheel", onWheel);
       mount.removeChild(renderer.domElement);
       scene.traverse((obj) => {
         if (obj instanceof THREE.Mesh) {
