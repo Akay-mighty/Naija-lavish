@@ -1,0 +1,274 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-poppins), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  /* NaijaLavish palette: clean Apple-like white + Naija green */
+  --radius: 0.85rem;
+  --background: oklch(0.985 0.002 145);
+  --foreground: oklch(0.18 0.02 145);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.02 145);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.02 145);
+  --primary: oklch(0.55 0.16 145);          /* Naija green #00875a-ish */
+  --primary-foreground: oklch(0.99 0.01 145);
+  --secondary: oklch(0.96 0.008 145);
+  --secondary-foreground: oklch(0.22 0.02 145);
+  --muted: oklch(0.96 0.006 145);
+  --muted-foreground: oklch(0.48 0.012 145);
+  --accent: oklch(0.94 0.04 100);            /* warm gold tint */
+  --accent-foreground: oklch(0.22 0.04 100);
+  --destructive: oklch(0.58 0.22 27);
+  --border: oklch(0.92 0.006 145);
+  --input: oklch(0.93 0.006 145);
+  --ring: oklch(0.55 0.16 145);
+  --chart-1: oklch(0.55 0.16 145);
+  --chart-2: oklch(0.62 0.14 80);
+  --chart-3: oklch(0.6 0.18 280);
+  --chart-4: oklch(0.78 0.16 60);
+  --chart-5: oklch(0.55 0.18 20);
+  --sidebar: oklch(0.985 0.002 145);
+  --sidebar-foreground: oklch(0.18 0.02 145);
+  --sidebar-primary: oklch(0.55 0.16 145);
+  --sidebar-primary-foreground: oklch(0.99 0.01 145);
+  --sidebar-accent: oklch(0.96 0.008 145);
+  --sidebar-accent-foreground: oklch(0.22 0.02 145);
+  --sidebar-border: oklch(0.92 0.006 145);
+  --sidebar-ring: oklch(0.55 0.16 145);
+
+  /* Game-specific tokens */
+  --naira: oklch(0.55 0.16 145);
+  --ink: oklch(0.18 0.02 145);
+  --ink-2: oklch(0.4 0.012 145);
+  --ink-3: oklch(0.55 0.012 145);
+  --surface: oklch(0.99 0.002 145);
+  --accent-soft: oklch(0.92 0.04 100);
+  --track: 0.01em;
+  --shadow-soft: 0 1px 2px rgba(15, 28, 22, 0.04), 0 6px 18px rgba(15, 28, 22, 0.06);
+  --shadow-lift: 0 2px 4px rgba(15, 28, 22, 0.05), 0 16px 38px rgba(15, 28, 22, 0.10);
+}
+
+.dark {
+  --background: oklch(0.14 0.012 145);
+  --foreground: oklch(0.97 0.005 145);
+  --card: oklch(0.19 0.012 145);
+  --card-foreground: oklch(0.97 0.005 145);
+  --popover: oklch(0.19 0.012 145);
+  --popover-foreground: oklch(0.97 0.005 145);
+  --primary: oklch(0.65 0.16 145);
+  --primary-foreground: oklch(0.13 0.012 145);
+  --secondary: oklch(0.24 0.012 145);
+  --secondary-foreground: oklch(0.97 0.005 145);
+  --muted: oklch(0.24 0.012 145);
+  --muted-foreground: oklch(0.7 0.008 145);
+  --accent: oklch(0.32 0.04 80);
+  --accent-foreground: oklch(0.95 0.04 80);
+  --destructive: oklch(0.7 0.19 22);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.65 0.16 145);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html, body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv11", "ss01", "ss03";
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    font-family: var(--font-sans);
+    letter-spacing: var(--track);
+  }
+  /* Prevent pull-to-refresh inside the game */
+  html { overscroll-behavior: none; }
+}
+
+/* ===== NaijaLavish game-specific utilities ===== */
+.naira { color: var(--naira); font-weight: 600; }
+.tabnum { font-variant-numeric: tabular-nums; }
+
+.panel {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+  border: 1px solid var(--border);
+}
+
+.chip-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px; height: 36px;
+  border-radius: 999px;
+  background: var(--secondary);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  transition: transform .12s ease, background .15s ease;
+}
+.chip-btn:hover { background: var(--accent); }
+.chip-btn:active { transform: scale(.94); }
+
+.big-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+  padding: 14px 18px;
+  width: 100%;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 600;
+  font-size: 16px;
+  border: none;
+  transition: transform .12s ease, filter .15s ease;
+}
+.big-btn:hover { filter: brightness(1.06); }
+.big-btn:active { transform: scale(.98); }
+.big-btn.plain {
+  background: var(--card);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+}
+.big-btn.gold { background: linear-gradient(180deg, oklch(0.82 0.14 80), oklch(0.72 0.16 80)); color: oklch(0.18 0.04 80); }
+.big-btn.ghost { background: transparent; color: var(--foreground); border: 1px solid var(--border); }
+
+.link-btn {
+  background: none; border: none; color: var(--ink-2);
+  text-decoration: underline; text-underline-offset: 4px;
+  font-size: 14px; padding: 8px;
+}
+
+/* Sheets / Bottom panels */
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  background: var(--card);
+  border-radius: 18px 18px 0 0;
+  box-shadow: var(--shadow-lift);
+  max-height: 86vh;
+  display: flex; flex-direction: column;
+  border-top: 1px solid var(--border);
+  z-index: 30;
+  animation: sheet-up .26s cubic-bezier(.22,1,.36,1);
+}
+@keyframes sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+/* Live pulse dot */
+.dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: oklch(0.65 0.18 145);
+  box-shadow: 0 0 0 0 oklch(0.65 0.18 145 / 0.6);
+  animation: dot-pulse 1.6s infinite;
+}
+@keyframes dot-pulse {
+  0% { box-shadow: 0 0 0 0 oklch(0.65 0.18 145 / 0.55); }
+  70% { box-shadow: 0 0 0 8px oklch(0.65 0.18 145 / 0); }
+  100% { box-shadow: 0 0 0 0 oklch(0.65 0.18 145 / 0); }
+}
+
+/* Phone */
+.phone-shell {
+  position: fixed; left: 50%; bottom: 0; transform: translateX(-50%);
+  width: min(420px, 100vw);
+  background: oklch(0.13 0.012 145);
+  color: oklch(0.98 0 0);
+  border-radius: 36px 36px 0 0;
+  padding: 14px 14px 22px;
+  box-shadow: var(--shadow-lift);
+  z-index: 35;
+  animation: sheet-up .26s cubic-bezier(.22,1,.36,1);
+  border: 1px solid oklch(1 0 0 / 8%);
+}
+
+/* Sticker reactions */
+.sticker-pop {
+  display: inline-flex; padding: 6px 10px; border-radius: 999px;
+  background: var(--secondary); color: var(--foreground);
+  font-size: 13px; border: 1px solid var(--border);
+  animation: sticker-pop .26s cubic-bezier(.22,1,.36,1);
+}
+@keyframes sticker-pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+/* Toasts */
+#toasts { position: fixed; left: 12px; right: 12px; bottom: 110px; z-index: 60; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.toast {
+  background: var(--card);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 14px;
+  box-shadow: var(--shadow-lift);
+  font-size: 14px;
+  display: flex; align-items: center; gap: 10px;
+  animation: toast-in .28s cubic-bezier(.22,1,.36,1);
+}
+.toast.success { border-left: 4px solid var(--primary); }
+.toast.warn    { border-left: 4px solid oklch(0.78 0.16 60); }
+.toast.danger  { border-left: 4px solid var(--destructive); }
+@keyframes toast-in { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+/* Naira fly animation when earning */
+.naira-fly {
+  position: fixed; pointer-events: none; z-index: 70;
+  font-weight: 700; color: var(--naira);
+  font-size: 18px;
+  animation: naira-fly 1.1s ease-out forwards;
+}
+@keyframes naira-fly {
+  0% { transform: translateY(0) scale(.9); opacity: 0; }
+  18% { transform: translateY(-8px) scale(1.1); opacity: 1; }
+  100% { transform: translateY(-72px) scale(1); opacity: 0; }
+}
+
+/* Hide scrollbars on the canvas overlay */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Pretty scrollbar for in-panel scroll */
+.soft-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.soft-scroll::-webkit-scrollbar-thumb { background: oklch(0.85 0.006 145); border-radius: 999px; }
+.soft-scroll::-webkit-scrollbar-track { background: transparent; }
