@@ -74,7 +74,7 @@ export default function TitleScreen() {
       const token = await getIdToken();
       if (!token) throw new Error("Auth failed after Google sign-in.");
 
-      // Check if player profile exists; if not, create one
+      // Create or fetch player profile on server
       const profileRes = await apiFetch("/api/player/init", {
         method: "POST",
         body: {
@@ -87,7 +87,14 @@ export default function TitleScreen() {
         idToken: token,
       });
 
-      if (profileRes.ok && profileRes.data?.ok && profileRes.data.player) {
+      if (!profileRes.ok || !profileRes.data?.ok) {
+        // Show the error — don't silently skip
+        setError(profileRes.error || "Failed to create profile. Please try again.");
+        setGoogleLoading(false);
+        return;
+      }
+
+      if (profileRes.data.player) {
         syncFromProfile(profileRes.data.player);
       }
       setScreen("game");
