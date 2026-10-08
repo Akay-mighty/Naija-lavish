@@ -1,10 +1,15 @@
 "use client";
 
+// Player store: a thin client over the Firestore profile (players/{uid}).
+// The server is the source of truth for cash, bank, needs, banned, adult.
+// We optimistically mirror the server values here and update via /api/* routes.
+
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { clamp } from "../lib/format";
 import { START_PLACE_ID } from "../data/places";
 import { LOOK_BY_ID, type Look } from "../data/items";
+import type { PlayerProfile } from "@/lib/firestore";
 
 export type Screen = "landing" | "title" | "game";
 
@@ -14,121 +19,90 @@ export interface InventoryEntry {
   acquiredAt: number;
 }
 
-export interface ChatMessage {
-  id: string;
-  who: "me" | "npc" | "system";
-  name?: string;
-  text: string;
-  emoji?: string;
-  ts: number;
-}
-
 export interface PlayerState {
-  // Identity
-  screen: Screen;
+  // Identity (mirrors Firestore profile)
+  uid: string | null;
   name: string;
   username: string;
   gender: "man" | "woman" | "";
   lookId: string;
   isGuest: boolean;
   adult: boolean;
+  banned: boolean;
 
-  // Firebase / Firestore
-  playerId: string | null;   // Firestore doc ID (null = local-only / not synced yet)
-  banned: boolean;             // set by admin via Firestore
-
-  // Money
-  cash: number;          // wallet
-  bank: number;          // bank balance
+  // Money (server-controlled; client mirrors)
+  cash: number;
+  bank: number;
   earnedTotal: number;
   spentTotal: number;
   sprayedTotal: number;
 
   // Needs (0-100)
-  hunger: number;        // Belle
+  hunger: number;
   energy: number;
   vibe: number;
 
   // World
   placeId: string;
-  characterPos: [number, number];  // world x, z
-  characterFacing: number;        // radians
+  characterPos: [number, number];
+  characterFacing: number;
   inventory: InventoryEntry[];
 
-  // Chat log (in-place, since no server)
-  chat: ChatMessage[];
-
-  // Bookkeeping
-  createdAt: number;
-  lastSeen: number;
-  lastTickAt: number;     // ms epoch of last needs-decay tick
-  cooldowns: Record<string, number>; // actionId -> ms epoch when ready
-
-  // Day/night cycle: game hour 0-24 (advances 1 hour every 90 sec real time)
+  // Day/night cycle
   gameHour: number;
   soundOn: boolean;
 
-  // UI state (not persisted; ephemeral)
-  uiReady?: boolean;
+  // UI
+  screen: Screen;
+
+  // Cooldowns (server-controlled)
+  cooldowns: Record<string, number>;
 }
 
 interface PlayerActions {
   setScreen: (s: Screen) => void;
-  createGuest: (name: string, gender: "man" | "woman", lookId: string) => void;
-  createAccount: (
-    name: string, username: string, gender: "man" | "woman", lookId: string, adult: boolean
-  ) => void;
-  logout: () => void;
+  /** Hydrate from server profile (called by auth listener). */
+  syncFromProfile: (p: PlayerProfile) => void;
+  /** Update only client-writable fields (name, look, placeId). */
+  setLocalName: (n: string) => void;
+  setLook: (id: string) => void;
   setPlace: (id: string) => void;
   moveCharacter: (x: number, z: number, facing?: number) => void;
-  adjustCash: (delta: number) => void;
-  adjustBank: (delta: number) => void;
   adjustNeed: (need: "hunger" | "energy" | "vibe", delta: number) => void;
   setNeed: (need: "hunger" | "energy" | "vibe", value: number) => void;
+  /** Apply a server action's result (cash, needs, cooldowns). */
+  applyActionResult: (result: any) => void;
   buyItem: (id: string, price: number) => boolean;
   equipItem: (id: string) => void;
   unequipItem: (id: string) => void;
   ownsItem: (id: string) => boolean;
   isEquipped: (id: string) => boolean;
-  workAction: (actionId: string, reward: number, energy: number, hunger: number, vibe: number) => boolean;
-  spray: (amount: number) => boolean;
-  rest: (energyGain: number, vibeGain: number) => void;
-  pushChat: (msg: Omit<ChatMessage, "id" | "ts">) => void;
-  clearChat: () => void;
-  tick: (dtMs: number) => void;     // decay needs over time
-  setBanned: (b: boolean) => void;  // admin-controlled
-  setPlayerId: (id: string | null) => void;
+  pushChat: (msg: { who: "me" | "system"; text: string }) => void;
+  tick: (dtMs: number) => void;
+  setBanned: (b: boolean) => void;
   advanceHour: (deltaHours: number) => void;
   toggleSound: () => void;
+  logout: () => void;
 }
 
 export type PlayerStore = PlayerState & PlayerActions;
 
 const INITIAL_NEEDS = { hunger: 80, energy: 80, vibe: 70 };
-const STARTING_CASH = 5000;
-
-// Generate a stable player ID for Firestore
-function genPlayerId(prefix: "guest" | "user", username?: string): string {
-  if (prefix === "user" && username) return `user_${username.toLowerCase()}`;
-  return `guest_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-}
 
 export const usePlayer = create<PlayerStore>()(
   persist(
     (set, get) => ({
       // ---- Initial state ----
-      screen: "landing",
+      uid: null,
       name: "",
       username: "",
       gender: "",
       lookId: "man-1",
       isGuest: false,
       adult: false,
-
-      playerId: null,
       banned: false,
 
-      cash: STARTING_CASH,
+      cash: 5000,
       bank: 0,
       earnedTotal: 0,
       spentTotal: 0,
@@ -143,66 +117,123 @@ export const usePlayer = create<PlayerStore>()(
       characterFacing: 0,
       inventory: [],
 
-      chat: [
-        {
-          id: "sys-welcome",
-          who: "system",
-          text: "Welcome to NaijaLavish. Tap any place on the map to walk there. Tap People to talk to who's around.",
-          ts: Date.now(),
-        },
-      ],
-
-      createdAt: Date.now(),
-      lastSeen: Date.now(),
-      lastTickAt: Date.now(),
-      cooldowns: {},
-
-      gameHour: 9,  // start at 9 AM
+      gameHour: 9,
       soundOn: true,
+      screen: "landing",
+      cooldowns: {},
 
       // ---- Actions ----
       setScreen: (s) => set({ screen: s }),
 
-      createGuest: (name, gender, lookId) =>
+      syncFromProfile: (p) =>
         set({
-          screen: "game",
-          name,
-          gender,
-          lookId,
-          isGuest: true,
-          adult: true,
-          playerId: genPlayerId("guest"),
-          banned: false,
-          createdAt: Date.now(),
-          lastTickAt: Date.now(),
+          uid: p.uid,
+          name: p.name,
+          username: p.username,
+          isGuest: p.isGuest,
+          adult: p.adult,
+          cash: p.cash,
+          bank: p.bank,
+          earnedTotal: p.earnedTotal,
+          spentTotal: p.spentTotal,
+          sprayedTotal: p.sprayedTotal,
+          hunger: p.hunger,
+          energy: p.energy,
+          vibe: p.vibe,
+          placeId: p.placeId,
+          lookId: p.lookId,
+          gender: p.gender as "man" | "woman",
+          banned: p.banned,
+          cooldowns: (p as any).cooldowns || {},
         }),
 
-      createAccount: (name, username, gender, lookId, adult) =>
-        set({
-          screen: "game",
-          name,
-          username,
-          gender,
-          lookId,
-          isGuest: false,
-          adult,
-          playerId: genPlayerId("user", username),
-          banned: false,
-          createdAt: Date.now(),
-          lastTickAt: Date.now(),
+      setLocalName: (n) => set({ name: n }),
+      setLook: (id) => set({ lookId: id }),
+      setPlace: (id) => set({ placeId: id }),
+      moveCharacter: (x, z, facing) =>
+        set((s) => ({
+          characterPos: [x, z],
+          characterFacing: facing ?? s.characterFacing,
+        })),
+
+      adjustNeed: (need, delta) =>
+        set((s) => ({ [need]: clamp(s[need] + delta) }) as Partial<PlayerState>),
+      setNeed: (need, value) =>
+        set((s) => ({ [need]: clamp(value) }) as Partial<PlayerState>),
+
+      applyActionResult: (result) =>
+        set((s) => {
+          if (!result) return {};
+          const updates: Partial<PlayerState> = {};
+          if (typeof result.cash === "number") updates.cash = result.cash;
+          if (typeof result.bank === "number") updates.bank = result.bank;
+          if (typeof result.energy === "number") updates.energy = result.energy;
+          if (typeof result.vibe === "number") updates.vibe = result.vibe;
+          if (typeof result.earnedTotal === "number") updates.earnedTotal = result.earnedTotal;
+          if (typeof result.spentTotal === "number") updates.spentTotal = result.spentTotal;
+          if (typeof result.sprayedTotal === "number") updates.sprayedTotal = result.sprayedTotal;
+          if (result.cooldowns) updates.cooldowns = { ...s.cooldowns, ...result.cooldowns };
+          return updates;
         }),
+
+      buyItem: (id, price) => {
+        const s = get();
+        if (s.cash < price) return false;
+        if (s.inventory.some((i) => i.id === id)) {
+          set((st) => ({
+            inventory: st.inventory.map((i) => (i.id === id ? { ...i, equipped: true } : i)),
+          }));
+          return true;
+        }
+        set({
+          cash: s.cash - price,
+          spentTotal: s.spentTotal + price,
+          inventory: [...s.inventory, { id, equipped: false, acquiredAt: Date.now() }],
+        });
+        return true;
+      },
+
+      equipItem: (id) =>
+        set((s) => ({
+          inventory: s.inventory.map((i) => (i.id === id ? { ...i, equipped: true } : i)),
+        })),
+      unequipItem: (id) =>
+        set((s) => ({
+          inventory: s.inventory.map((i) => (i.id === id ? { ...i, equipped: false } : i)),
+        })),
+      ownsItem: (id) => get().inventory.some((i) => i.id === id),
+      isEquipped: (id) => get().inventory.some((i) => i.id === id && i.equipped),
+
+      pushChat: (msg) => {
+        // Local-only echo; real chat comes from Firestore listener
+        // (kept for optimistic UI)
+      },
+
+      tick: (dtMs) => {
+        // Needs decay client-side (server is source of truth, will overwrite)
+        const s = get();
+        const dtSec = dtMs / 1000;
+        set({
+          hunger: clamp(s.hunger - dtSec / 18),
+          energy: clamp(s.energy - (dtSec / 22) * 0.4),
+          vibe: clamp(s.vibe - (dtSec / 30) * 0.6),
+        });
+      },
+
+      setBanned: (b) => set({ banned: b }),
+      advanceHour: (delta) => set((s) => ({ gameHour: (s.gameHour + delta + 24) % 24 })),
+      toggleSound: () => set((s) => ({ soundOn: !s.soundOn })),
 
       logout: () =>
         set({
-          screen: "landing",
+          uid: null,
           name: "",
           username: "",
           gender: "",
           isGuest: false,
           adult: false,
-          playerId: null,
           banned: false,
-          cash: STARTING_CASH,
+          cash: 5000,
           bank: 0,
           earnedTotal: 0,
           spentTotal: 0,
@@ -213,175 +244,19 @@ export const usePlayer = create<PlayerStore>()(
           placeId: START_PLACE_ID,
           characterPos: [0, 0],
           inventory: [],
-          chat: [],
           cooldowns: {},
+          screen: "landing",
         }),
-
-      setBanned: (b) => set({ banned: b }),
-      setPlayerId: (id) => set({ playerId: id }),
-
-      advanceHour: (deltaHours) =>
-        set((s) => ({ gameHour: (s.gameHour + deltaHours + 24) % 24 })),
-
-      toggleSound: () =>
-        set((s) => ({ soundOn: !s.soundOn })),
-
-      setPlace: (id) => set({ placeId: id }),
-      moveCharacter: (x, z, facing) =>
-        set((s) => ({
-          characterPos: [x, z],
-          characterFacing: facing ?? s.characterFacing,
-        })),
-
-      adjustCash: (delta) =>
-        set((s) => ({
-          cash: Math.max(0, s.cash + delta),
-          earnedTotal: delta > 0 ? s.earnedTotal + delta : s.earnedTotal,
-          spentTotal: delta < 0 ? s.spentTotal + Math.abs(delta) : s.spentTotal,
-        })),
-
-      adjustBank: (delta) =>
-        set((s) => ({ bank: Math.max(0, s.bank + delta) })),
-
-      adjustNeed: (need, delta) =>
-        set((s) => ({ [need]: clamp(s[need] + delta) }) as Partial<PlayerState>),
-
-      setNeed: (need, value) =>
-        set((s) => ({ [need]: clamp(value) }) as Partial<PlayerState>),
-
-      buyItem: (id, price) => {
-        const s = get();
-        if (s.cash < price) return false;
-        if (s.inventory.some((i) => i.id === id)) {
-          // Already owned, just equip
-          set((st) => ({
-            inventory: st.inventory.map((i) =>
-              i.id === id ? { ...i, equipped: true } : i
-            ),
-          }));
-          return true;
-        }
-        set({
-          cash: s.cash - price,
-          spentTotal: s.spentTotal + price,
-          inventory: [
-            ...s.inventory,
-            { id, equipped: false, acquiredAt: Date.now() },
-          ],
-        });
-        return true;
-      },
-
-      equipItem: (id) =>
-        set((s) => ({
-          inventory: s.inventory.map((i) =>
-            i.id === id ? { ...i, equipped: true } : i
-          ),
-        })),
-
-      unequipItem: (id) =>
-        set((s) => ({
-          inventory: s.inventory.map((i) =>
-            i.id === id ? { ...i, equipped: false } : i
-          ),
-        })),
-
-      ownsItem: (id) => get().inventory.some((i) => i.id === id),
-
-      isEquipped: (id) =>
-        get().inventory.some((i) => i.id === id && i.equipped),
-
-      workAction: (actionId, reward, energy, hunger, vibe) => {
-        const s = get();
-        // Energy gate
-        if (s.energy < energy) return false;
-        // Cooldown gate
-        const now = Date.now();
-        const ready = s.cooldowns[actionId] ?? 0;
-        if (now < ready) return false;
-
-        set({
-          cash: Math.max(0, s.cash + reward),
-          earnedTotal: s.earnedTotal + Math.max(0, reward),
-          spentTotal: reward < 0 ? s.spentTotal + Math.abs(reward) : s.spentTotal,
-          hunger: clamp(s.hunger - hunger),
-          energy: clamp(s.energy - energy),
-          vibe: clamp(s.vibe - vibe),
-          cooldowns: { ...s.cooldowns, [actionId]: now + 25_000 },
-          lastSeen: now,
-        });
-        return true;
-      },
-
-      spray: (amount) => {
-        const s = get();
-        if (s.cash < amount) return false;
-        set({
-          cash: s.cash - amount,
-          sprayedTotal: s.sprayedTotal + amount,
-          spentTotal: s.spentTotal + amount,
-          vibe: clamp(s.vibe + Math.floor(amount / 30)),
-          lastSeen: Date.now(),
-        });
-        return true;
-      },
-
-      rest: (energyGain, vibeGain) =>
-        set((s) => ({
-          energy: clamp(s.energy + energyGain),
-          vibe: clamp(s.vibe + vibeGain),
-          hunger: clamp(s.hunger - 4),
-          lastSeen: Date.now(),
-        })),
-
-      pushChat: (msg) =>
-        set((s) => ({
-          chat: [
-            ...s.chat.slice(-49),
-            {
-              ...msg,
-              id: `m${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-              ts: Date.now(),
-            },
-          ],
-        })),
-
-      clearChat: () => set({ chat: [] }),
-
-      tick: (dtMs) => {
-        const s = get();
-        // Decay needs by ~1 per 18 seconds (slow), vibes 1 per 30 seconds
-        const dtSec = dtMs / 1000;
-        const dh = dtSec / 18;
-        const de = dtSec / 22;
-        const dv = dtSec / 30;
-        set({
-          hunger: clamp(s.hunger - dh),
-          energy: clamp(s.energy - de * 0.4), // energy decays slower
-          vibe: clamp(s.vibe - dv * 0.6),
-          lastTickAt: Date.now(),
-        });
-      },
     }),
     {
       name: "naijalavish-player",
       storage: createJSONStorage(() => (typeof window === "undefined" ? (undefined as any) : localStorage)),
-      // Don't persist screen (we always start on landing for a fresh UX)
       partialize: ({ screen, ...rest }) => rest as PlayerState,
-      version: 1,
+      version: 2,
     }
   )
 );
 
-// Selector helper: vibe bonus from equipped items
-import { ITEM_BY_ID } from "../data/items";
-export function totalVibeBonus(inv: InventoryEntry[]): number {
-  return inv
-    .filter((i) => i.equipped)
-    .reduce((acc, i) => acc + (ITEM_BY_ID[i.id]?.vibeBoost ?? 0), 0);
-}
-
-// Get the active look (with equipped outfit override if any)
 export function activeLook(state: PlayerState): Look {
   return LOOK_BY_ID[state.lookId] ?? LOOK_BY_ID["man-1"];
 }
