@@ -158,6 +158,7 @@ function BankApp() {
   const applyActionResult = usePlayer((s) => s.applyActionResult);
   const earnedTotal = usePlayer((s) => s.earnedTotal);
   const spentTotal = usePlayer((s) => s.spentTotal);
+  const dailyStreak = usePlayer((s) => s.dailyStreak);
   const idToken = useAuth((s) => s.idToken);
   const [amount, setAmount] = useState(1000);
   const [busy, setBusy] = useState(false);
@@ -204,6 +205,26 @@ function BankApp() {
         <div className="flex justify-between text-xs text-white/80">
           <span>Earned: {shortNaira(earnedTotal)}</span>
           <span>Spent: {shortNaira(spentTotal)}</span>
+        </div>
+      </div>
+
+      {/* Daily streak */}
+      <div className="rounded-xl bg-gradient-to-br from-amber-600/20 to-orange-600/20 border border-amber-500/30 p-3 mb-3">
+        <div className="text-[11px] text-amber-300/80 mb-1">Daily reward streak</div>
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-2xl">🔥</span>
+          <b className="text-xl text-white tabnum">{dailyStreak || 0}<span className="text-sm text-white/50">/7</span></b>
+        </div>
+        <div className="flex gap-1 mt-2">
+          {[1, 2, 3, 4, 5, 6, 7].map((day) => (
+            <div
+              key={day}
+              className={`flex-1 h-1.5 rounded-full ${(dailyStreak || 0) >= day ? "bg-amber-400" : "bg-white/10"}`}
+            />
+          ))}
+        </div>
+        <div className="text-[10px] text-white/50 mt-1.5">
+          Come back tomorrow for ₦{dailyStreak && dailyStreak >= 7 ? "1,000" : ["1,000","1,500","2,000","3,000","4,000","5,000","10,000"][dailyStreak || 0]}
         </div>
       </div>
 

@@ -133,6 +133,31 @@ export default function Game() {
     return () => clearTimeout(t);
   }, [name]);
 
+  // Daily reward check on mount (Africa/Lagos day)
+  useEffect(() => {
+    if (!idToken) return;
+    const today = new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 10);
+    const lastClaim = usePlayer.getState().dailyLastClaim;
+    if (lastClaim === today) return;
+    // Try to claim daily reward
+    (async () => {
+      try {
+        const res = await fetch("/api/daily", {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${idToken}` },
+        });
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          // Bank-SMS style toast
+          setTimeout(() => {
+            toast(`Alert don enter! Daily reward: ₦${data.reward.toLocaleString()} (Day ${data.streak}/7)`, "success", "💰");
+            sfx.play("cashEarn");
+          }, 1500);
+        }
+      } catch {}
+    })();
+  }, [idToken]);
+
   // Solo mode banner
   useEffect(() => {
     if (soloMode) {

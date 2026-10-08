@@ -41,6 +41,18 @@ export default function PlaceSheet({ open, onClose, onWalkHere }: PlaceSheetProp
   // Reset shop state when place changes
   useEffect(() => { setShowShop(false); }, [placeId]);
 
+  // Ambient sound loops based on place category (before early return so hooks order is stable)
+  const isHome = place?.category === "home";
+  const isOwambe = place?.id === "transcorp" || place?.id === "magicland";
+  useEffect(() => {
+    if (isHome) sfx.startLoop("generator");
+    if (isOwambe) sfx.startLoop("afrobeat");
+    return () => {
+      if (isHome) sfx.stopLoop("generator");
+      if (isOwambe) sfx.stopLoop("afrobeat");
+    };
+  }, [isHome, isOwambe]);
+
   if (!place) return null;
 
   // ---- Call /api/action with the ID token ----
@@ -119,8 +131,6 @@ export default function PlaceSheet({ open, onClose, onWalkHere }: PlaceSheetProp
       setBusy(false);
     }
   }
-
-  const isHome = place.category === "home";
 
   return (
     <AnimatePresence>

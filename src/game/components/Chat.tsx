@@ -73,8 +73,12 @@ export default function Chat() {
 
   return (
     <div
-      className="absolute bottom-[68px] left-3 right-3 z-20 pointer-events-none"
-      style={{ maxWidth: 360 }}
+      className="absolute left-3 right-3 z-20 pointer-events-none"
+      style={{
+        maxWidth: 360,
+        // Above the bottom nav, respecting safe-area inset
+        bottom: "calc(72px + env(safe-area-inset-bottom, 0px))",
+      }}
     >
       {/* Connection indicator */}
       {connected && !isEmpty && (
