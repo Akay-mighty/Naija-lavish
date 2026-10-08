@@ -115,7 +115,14 @@ export async function sendChatMessage(
       },
       body: JSON.stringify({ text, placeId }),
     });
-    const data = await res.json();
+    // Always try to parse as JSON; if it fails (HTML error page), return friendly error
+    const responseText = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      return { ok: false, error: `Server error (status ${res.status}). Check your Firebase service account configuration.` };
+    }
     if (!res.ok || !data.ok) return { ok: false, error: data.error || "Chat failed." };
     return { ok: true };
   } catch (e: any) {
