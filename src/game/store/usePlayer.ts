@@ -52,6 +52,13 @@ export interface PlayerState {
   gameHour: number;
   soundOn: boolean;
 
+  // Quest progress (mirrored from server)
+  quest?: { step: number; completed: string[] };
+
+  // Daily reward
+  dailyStreak?: number;
+  dailyLastClaim?: string;
+
   // UI
   screen: Screen;
 
@@ -145,6 +152,9 @@ export const usePlayer = create<PlayerStore>()(
           gender: p.gender as "man" | "woman",
           banned: p.banned,
           cooldowns: (p as any).cooldowns || {},
+          quest: (p as any).quest || { step: 0, completed: [] },
+          dailyStreak: (p as any).dailyStreak,
+          dailyLastClaim: (p as any).dailyLastClaim,
         }),
 
       setLocalName: (n) => set({ name: n }),
@@ -252,7 +262,12 @@ export const usePlayer = create<PlayerStore>()(
       name: "naijalavish-player",
       storage: createJSONStorage(() => (typeof window === "undefined" ? (undefined as any) : localStorage)),
       partialize: ({ screen, ...rest }) => rest as PlayerState,
-      version: 2,
+      version: 3,
+      // Migrate from older versions (v1/v2 had different shape) — discard + start fresh
+      migrate: () => {
+        // Return null to discard old state and start fresh
+        return null as any;
+      },
     }
   )
 );
