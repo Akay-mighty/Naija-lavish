@@ -16,7 +16,14 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 import { db, rtdb } from "./firebase";
-import { ref, onValue, onDisconnect, set, remove, serverTimestamp as rtdbServerTimestamp } from "firebase/database";
+import {
+  ref as dbRef,
+  onValue as dbOnValue,
+  onDisconnect as dbOnDisconnect,
+  set as dbSet,
+  remove as dbRemove,
+  serverTimestamp as dbServerTimestamp,
+} from "firebase/database";
 
 // ============================================================
 // PLAYER PROFILE (read + limited write)
@@ -151,12 +158,12 @@ const PRESENCE_STALE_MS = 30_000;
 
 /** Write own presence to RTDB. Auto-removed on disconnect. */
 export function initPresence(uid: string, name: string, lookId: string, placeId: string) {
-  const r = ref(rtdb, `presence/${uid}`);
-  onDisconnect(r).remove();
-  void set(r, {
+  const r = dbRef(rtdb, `presence/${uid}`);
+  dbOnDisconnect(r).remove();
+  void dbSet(r, {
     uid, name, lookId, placeId,
     x: 0, z: 0, ry: 0, anim: "idle",
-    t: rtdbServerTimestamp(),
+    t: dbServerTimestamp(),
   });
   return r;
 }
@@ -167,9 +174,9 @@ export async function updatePresence(
   patch: Partial<PresenceEntry>
 ): Promise<void> {
   try {
-    await set(ref(rtdb, `presence/${uid}`), {
+    await dbSet(dbRef(rtdb, `presence/${uid}`), {
       ...patch,
-      t: rtdbServerTimestamp(),
+      t: dbServerTimestamp(),
     });
   } catch (e) {
     console.warn("[rtdb] updatePresence:", e);
@@ -179,7 +186,7 @@ export async function updatePresence(
 /** Remove own presence (on logout / leave). */
 export async function clearPresence(uid: string): Promise<void> {
   try {
-    await remove(ref(rtdb, `presence/${uid}`));
+    await dbRemove(dbRef(rtdb, `presence/${uid}`));
   } catch (e) {
     console.warn("[rtdb] clearPresence:", e);
   }
@@ -190,8 +197,8 @@ export function listenToPresence(
   placeId: string,
   cb: (entries: PresenceEntry[]) => void
 ): Unsubscribe {
-  const q = ref(rtdb, "presence");
-  const unsub = onValue(q, (snap) => {
+  const q = dbRef(rtdb, "presence");
+  const unsub = dbOnValue(q, (snap) => {
     const now = Date.now();
     const list: PresenceEntry[] = [];
     snap.forEach((child) => {
@@ -212,8 +219,8 @@ export function listenToPresence(
 export function listenToAllPresence(
   cb: (entries: PresenceEntry[]) => void
 ): Unsubscribe {
-  const q = ref(rtdb, "presence");
-  const unsub = onValue(q, (snap) => {
+  const q = dbRef(rtdb, "presence");
+  const unsub = dbOnValue(q, (snap) => {
     const now = Date.now();
     const list: PresenceEntry[] = [];
     snap.forEach((child) => {
