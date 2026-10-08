@@ -1,6 +1,6 @@
 // Shared helpers for API routes: token verification, ban check, profile load.
 
-import { adminAuth, adminDb } from "./admin";
+import { adminAuth, adminDb, adminStatus } from "./admin";
 import type { DecodedIdToken } from "firebase-admin/auth";
 
 export const STARTING_CASH = 5000;
@@ -38,7 +38,11 @@ export async function verifyToken(req: Request): Promise<DecodedIdToken | null> 
   if (!match) return null;
   try {
     return await adminAuth().verifyIdToken(match[1]);
-  } catch {
+  } catch (e: any) {
+    // If admin init failed (placeholder service account), surface that error
+    if (e?.message?.includes("not configured") || e?.message?.includes("init failed")) {
+      console.error("[guards] admin init error:", e?.message);
+    }
     return null;
   }
 }
@@ -47,8 +51,13 @@ export async function verifyToken(req: Request): Promise<DecodedIdToken | null> 
 export async function requireToken(req: Request): Promise<
   { ok: true; uid: string; token: DecodedIdToken } | { ok: false; res: Response }
 > {
+  // Check admin status first — return JSON error if not configured
+  const status = adminStatus();
+  if (!status.ok) {
+    return { ok: false, res: error(status.error || "Firebase Admin not configured.", 503) };
+  }
   const token = await verifyToken(req);
-  if (!token) return { ok: false, res: error("Unauthorized", 401) };
+  if (!token) return { ok: false, res: error("Unauthorized. Please sign in again.", 401) };
   return { ok: true, uid: token.uid, token };
 }
 
