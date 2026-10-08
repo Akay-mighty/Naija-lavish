@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { usePlayer } from "@/game/store/usePlayer";
 import { useAuth } from "@/game/store/useAuth";
@@ -35,29 +35,27 @@ function AppContent() {
   const sp = useSearchParams();
   const isAdmin = sp.get("admin") === "1";
   const screen = usePlayer((s) => s.screen);
-  const [hydrate, setHydrate] = useState(false);
+  const hydrate = usePlayer.persist.hasHydrated();
   const authStatus = useAuth((s) => s.status);
   const signIn = useAuth((s) => s.signIn);
   const uid = useAuth((s) => s.uid);
-  const soloMode = useAuth((s) => s.soloMode);
-
-  // Reactive hydration flag (hasHydrated() alone never triggers a re-render)
-  useEffect(() => {
-    if (usePlayer.persist.hasHydrated()) setHydrate(true);
-    const unsub = usePlayer.persist.onFinishHydration(() => setHydrate(true));
-    const t = window.setTimeout(() => setHydrate(true), 1500); // never hang on storage issues
-    return () => { unsub(); window.clearTimeout(t); };
-  }, []);
+  const isPlayer = useAuth((s) => s.isPlayer);
 
   // Auto sign in anonymously on first load (unless going to admin route)
   useEffect(() => {
     if (isAdmin) return;
-    if (soloMode) return; // sign-in already failed — don't loop
-    if (authStatus === "signed-out") {
-      // Try anonymous sign-in (will set soloMode=true if it fails)
+    if (authStatus === "loading" || authStatus === "player" || authStatus === "admin") return;
+    if (authStatus === "signed-out" || authStatus === "anon") {
       void signIn();
     }
-  }, [authStatus, isAdmin, signIn, soloMode]);
+  }, [authStatus, isAdmin, signIn]);
+
+  // Auto-route returning authenticated players (Google or anon with profile) straight to game
+  useEffect(() => {
+    if (uid && isPlayer && screen === "landing") {
+      usePlayer.setState({ screen: "game" });
+    }
+  }, [uid, isPlayer, screen]);
 
   // Re-hydrate on focus
   useEffect(() => {
@@ -69,13 +67,13 @@ function AppContent() {
   // Admin route: bypass game entirely
   if (isAdmin) return <AdminDashboard />;
 
-  if (!hydrate || (authStatus === "loading" && !soloMode)) return <Splash />;
+  if (!hydrate || authStatus === "loading") return <Splash />;
 
   // If we have a uid AND a player profile exists, go straight to game
   if (uid && authStatus === "player" && screen === "game") return <Game />;
   if (screen === "landing") return <Landing />;
   if (screen === "title")  return <TitleScreen />;
-  if (screen === "game" && (uid || authStatus === "anon" || soloMode)) return <Game />;
+  if (screen === "game" && (uid || authStatus === "anon")) return <Game />;
   return <Landing />;
 }
 
