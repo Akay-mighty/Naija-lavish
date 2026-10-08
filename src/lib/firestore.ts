@@ -1,33 +1,33 @@
-// Firestore service layer for NaijaLavish
-// Handles player sync + admin actions.
-// All calls degrade gracefully to localStorage-only if Firestore is unreachable.
+// Firestore client service for NaijaLavish.
+// READ-ONLY for chat + admin actions.
+// For player profile, client may ONLY update: name, username, lookId, gender, placeId, lastSeen.
+// All cash/bank/banned/adult writes go through /api/* route handlers (server-side).
 
 import {
   collection,
   doc,
-  setDoc,
-  updateDoc,
-  getDoc,
-  getDocs,
   onSnapshot,
   query,
   orderBy,
   limit,
+  setDoc,
   serverTimestamp,
-  addDoc,
-  where,
+  getDoc,
+  type Unsubscribe,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { db, rtdb } from "./firebase";
+import { ref, onValue, onDisconnect, set, remove, serverTimestamp as rtdbServerTimestamp } from "firebase/database";
 
-// ---- Collection names ----
-export const PLAYERS_COL = "players";
-export const ADMIN_ACTIONS_COL = "adminActions";
+// ============================================================
+// PLAYER PROFILE (read + limited write)
+// ============================================================
 
-// ---- Types ----
-export interface PlayerDoc {
+export interface PlayerProfile {
+  uid: string;
   name: string;
   username: string;
   isGuest: boolean;
+  adult: boolean;
   cash: number;
   bank: number;
   earnedTotal: number;
@@ -39,431 +39,228 @@ export interface PlayerDoc {
   placeId: string;
   lookId: string;
   gender: string;
-  adult: boolean;
   banned: boolean;
   createdAt: number;
   lastSeen: number;
+  quest?: Record<string, any>;
+  dailyStreak?: number;
+  dailyLastClaim?: string;
 }
 
-export interface AdminAction {
-  id?: string;
-  adminId: string;
-  playerId: string;
-  playerName: string;
-  action: string; // "credit" | "debit" | "setNeed" | "ban" | "unban" | "reset"
-  field?: string;
-  amount?: number;
-  note?: string;
-  timestamp: number;
-}
-
-// ============================================================
-// PLAYER SYNC
-// ============================================================
-
-/** Create or update a player doc in Firestore. */
-export async function upsertPlayer(
-  playerId: string,
-  data: Partial<PlayerDoc>
-): Promise<void> {
-  try {
-    await setDoc(
-      doc(db, PLAYERS_COL, playerId),
-      { ...data, lastSeen: Date.now() },
-      { merge: true }
-    );
-  } catch (e) {
-    // Silent fail — game continues on localStorage
-    console.warn("[firestore] upsertPlayer failed:", e);
-  }
-}
-
-/** Read a single player doc. */
-export async function getPlayer(playerId: string): Promise<PlayerDoc | null> {
-  try {
-    const snap = await getDoc(doc(db, PLAYERS_COL, playerId));
-    if (!snap.exists()) return null;
-    return snap.data() as PlayerDoc;
-  } catch (e) {
-    console.warn("[firestore] getPlayer failed:", e);
-    return null;
-  }
-}
-
-/** Real-time listener for a single player. Returns unsubscribe fn. */
+/** Real-time listener for own player profile. */
 export function listenToPlayer(
-  playerId: string,
-  cb: (data: PlayerDoc | null) => void
-): () => void {
-  try {
-    return onSnapshot(
-      doc(db, PLAYERS_COL, playerId),
-      (snap) => {
-        cb(snap.exists() ? (snap.data() as PlayerDoc) : null);
-      },
-      (err) => {
-        console.warn("[firestore] listenToPlayer error:", err);
-      }
-    );
-  } catch (e) {
-    console.warn("[firestore] listenToPlayer failed:", e);
-    return () => {};
-  }
+  uid: string,
+  cb: (p: PlayerProfile | null) => void
+): Unsubscribe {
+  return onSnapshot(
+    doc(db, "players", uid),
+    (snap) => cb(snap.exists() ? (snap.data() as PlayerProfile) : null),
+    (err) => console.warn("[firestore] listenToPlayer:", err)
+  );
 }
 
-// ============================================================
-// ADMIN QUERIES
-// ============================================================
-
-/** List all players (most recent first). Used by admin dashboard. */
-export async function listPlayers(): Promise<Array<{ id: string } & PlayerDoc>> {
-  try {
-    const q = query(
-      collection(db, PLAYERS_COL),
-      orderBy("lastSeen", "desc"),
-      limit(200)
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as PlayerDoc) }));
-  } catch (e) {
-    console.warn("[firestore] listPlayers failed:", e);
-    return [];
-  }
-}
-
-/** Real-time listener for ALL players. Used by admin dashboard. */
-export function listenToPlayers(
-  cb: (players: Array<{ id: string } & PlayerDoc>) => void
-): () => void {
-  try {
-    const q = query(
-      collection(db, PLAYERS_COL),
-      orderBy("lastSeen", "desc"),
-      limit(200)
-    );
-    return onSnapshot(
-      q,
-      (snap) => {
-        cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as PlayerDoc) })));
-      },
-      (err) => {
-        console.warn("[firestore] listenToPlayers error:", err);
-      }
-    );
-  } catch (e) {
-    console.warn("[firestore] listenToPlayers failed:", e);
-    return () => {};
-  }
-}
-
-/** Admin updates a player's doc directly. */
-export async function adminUpdatePlayer(
-  playerId: string,
-  updates: Partial<PlayerDoc>
+/** Update only the client-writable fields. Server enforces rules. */
+export async function updatePlayerClient(
+  uid: string,
+  fields: Pick<PlayerProfile, "name" | "username" | "lookId" | "gender" | "placeId" | "lastSeen">
 ): Promise<void> {
   try {
-    await updateDoc(doc(db, PLAYERS_COL, playerId), {
-      ...updates,
-      lastSeen: Date.now(),
-    });
+    await setDoc(doc(db, "players", uid), fields as any, { merge: true });
   } catch (e) {
-    console.warn("[firestore] adminUpdatePlayer failed:", e);
-    throw e;
-  }
-}
-
-/** Log an admin action (audit trail). */
-export async function logAdminAction(action: Omit<AdminAction, "timestamp">): Promise<void> {
-  try {
-    await addDoc(collection(db, ADMIN_ACTIONS_COL), {
-      ...action,
-      timestamp: Date.now(),
-      serverTime: serverTimestamp(),
-    });
-  } catch (e) {
-    console.warn("[firestore] logAdminAction failed:", e);
-  }
-}
-
-/** List recent admin actions (newest first). */
-export async function listAdminActions(): Promise<AdminAction[]> {
-  try {
-    const q = query(
-      collection(db, ADMIN_ACTIONS_COL),
-      orderBy("timestamp", "desc"),
-      limit(100)
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as AdminAction) }));
-  } catch (e) {
-    console.warn("[firestore] listAdminActions failed:", e);
-    return [];
-  }
-}
-
-/** Real-time listener for admin actions. */
-export function listenToAdminActions(cb: (actions: AdminAction[]) => void): () => void {
-  try {
-    const q = query(
-      collection(db, ADMIN_ACTIONS_COL),
-      orderBy("timestamp", "desc"),
-      limit(100)
-    );
-    return onSnapshot(
-      q,
-      (snap) => {
-        cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as AdminAction) })));
-      },
-      (err) => {
-        console.warn("[firestore] listenToAdminActions error:", err);
-      }
-    );
-  } catch (e) {
-    console.warn("[firestore] listenToAdminActions failed:", e);
-    return () => {};
+    console.warn("[firestore] updatePlayerClient:", e);
   }
 }
 
 // ============================================================
-// PLAYER SYNC MANAGER
-// ============================================================
-// Watches the local Zustand store and syncs to Firestore (debounced).
-// Listens for remote changes (from admin) and updates the local store.
-// Prevents sync loops with an `isRemoteUpdate` flag.
-
-import { usePlayer } from "@/game/store/usePlayer";
-
-let syncTimeout: ReturnType<typeof setTimeout> | null = null;
-let unsubStore: (() => void) | null = null;
-let unsubRemote: (() => void) | null = null;
-let isRemoteUpdate = false;
-let activePlayerId: string | null = null;
-
-/** Start syncing the local player store to/from Firestore. */
-export function initPlayerSync(playerId: string): () => void {
-  // Clean up any existing sync
-  stopPlayerSync();
-  activePlayerId = playerId;
-
-  // Debounced sync (3 seconds after last change)
-  const scheduleSync = () => {
-    if (isRemoteUpdate) return; // Skip if updating from remote
-    if (syncTimeout) clearTimeout(syncTimeout);
-    syncTimeout = setTimeout(() => {
-      const s = usePlayer.getState();
-      if (!s.playerId) return;
-      void upsertPlayer(s.playerId, {
-        name: s.name,
-        username: s.username,
-        isGuest: s.isGuest,
-        cash: s.cash,
-        bank: s.bank,
-        earnedTotal: s.earnedTotal,
-        spentTotal: s.spentTotal,
-        sprayedTotal: s.sprayedTotal,
-        hunger: s.hunger,
-        energy: s.energy,
-        vibe: s.vibe,
-        placeId: s.placeId,
-        lookId: s.lookId,
-        gender: s.gender,
-        adult: s.adult,
-        banned: s.banned,
-        createdAt: s.createdAt,
-      });
-      // Also update presence
-      void updatePresence(playerId, s.name, s.placeId, s.lookId);
-    }, 3000);
-  };
-
-  // Subscribe to local store changes
-  unsubStore = usePlayer.subscribe(scheduleSync);
-
-  // Listen for remote changes (admin actions)
-  unsubRemote = listenToPlayer(playerId, (remote) => {
-    if (!remote) return;
-    const local = usePlayer.getState();
-    // Only update if remote is newer (admin made a change)
-    if (remote.lastSeen > local.lastSeen + 1000) {
-      isRemoteUpdate = true;
-      usePlayer.setState({
-        cash: remote.cash ?? local.cash,
-        bank: remote.bank ?? local.bank,
-        hunger: remote.hunger ?? local.hunger,
-        energy: remote.energy ?? local.energy,
-        vibe: remote.vibe ?? local.vibe,
-        banned: remote.banned ?? false,
-        lastSeen: remote.lastSeen,
-      });
-      isRemoteUpdate = false;
-    }
-  });
-
-  // Heartbeat: refresh presence every 20 seconds so presence TTL stays alive
-  // even when the player isn't changing state.
-  const s0 = usePlayer.getState();
-  void updatePresence(playerId, s0.name, s0.placeId, s0.lookId);
-  heartbeatInterval = setInterval(() => {
-    const s = usePlayer.getState();
-    if (!s.playerId) return;
-    void updatePresence(s.playerId, s.name, s.placeId, s.lookId);
-  }, 20_000);
-
-  return stopPlayerSync;
-}
-
-let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-
-/** Stop syncing and clean up listeners. */
-export function stopPlayerSync(): void {
-  if (syncTimeout) {
-    clearTimeout(syncTimeout);
-    syncTimeout = null;
-  }
-  if (unsubStore) {
-    unsubStore();
-    unsubStore = null;
-  }
-  if (unsubRemote) {
-    unsubRemote();
-    unsubRemote = null;
-  }
-  if (heartbeatInterval) {
-    clearInterval(heartbeatInterval);
-    heartbeatInterval = null;
-  }
-  activePlayerId = null;
-}
-
-// ============================================================
-// REAL-TIME CHAT
+// CHAT (read-only on client; sends via /api/chat)
 // ============================================================
 
 export interface ChatDoc {
-  id?: string;
-  playerId: string;
-  playerName: string;
+  id: string;
+  uid: string;
+  name: string;
   lookId?: string;
   text: string;
-  emoji?: string;
-  placeId?: string;       // optional: filter by place
-  isSystem?: boolean;
-  timestamp: number;
+  placeId?: string;
+  t: number;
 }
 
-/** Send a chat message to the global chat collection. */
+/** Real-time listener for global chat (last 50, newest at bottom). */
+export function listenToChat(cb: (messages: ChatDoc[]) => void): Unsubscribe {
+  const q = query(collection(db, "chat"), orderBy("t", "desc"), limit(50));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const msgs = snap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as Omit<ChatDoc, "id">) }))
+        .reverse();
+      cb(msgs);
+    },
+    (err) => console.warn("[firestore] listenToChat:", err)
+  );
+}
+
+/** Send a chat message via the server route (validates + filters). */
 export async function sendChatMessage(
-  msg: Omit<ChatDoc, "id" | "timestamp">
-): Promise<void> {
+  idToken: string,
+  text: string,
+  placeId: string
+): Promise<{ ok: boolean; error?: string }> {
   try {
-    await addDoc(collection(db, "chat"), {
-      ...msg,
-      timestamp: Date.now(),
-      serverTime: serverTimestamp(),
-    });
-  } catch (e) {
-    console.warn("[firestore] sendChatMessage failed:", e);
-  }
-}
-
-/** Real-time listener for global chat (last 50 messages). */
-export function listenToChat(cb: (messages: ChatDoc[]) => void): () => void {
-  try {
-    const q = query(
-      collection(db, "chat"),
-      orderBy("timestamp", "desc"),
-      limit(50)
-    );
-    return onSnapshot(
-      q,
-      (snap) => {
-        // Reverse so newest is at the bottom
-        const msgs = snap.docs
-          .map((d) => ({ id: d.id, ...(d.data() as ChatDoc) }))
-          .reverse();
-        cb(msgs);
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${idToken}`,
       },
-      (err) => console.warn("[firestore] listenToChat error:", err)
-    );
-  } catch (e) {
-    console.warn("[firestore] listenToChat failed:", e);
-    return () => {};
+      body: JSON.stringify({ text, placeId }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) return { ok: false, error: data.error || "Chat failed." };
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || "Network error." };
   }
 }
 
 // ============================================================
-// PRESENCE (who's online + where)
+// PRESENCE + POSITIONS (Realtime Database — low latency, cheap)
 // ============================================================
 
-export interface PresenceDoc {
-  id?: string;
-  playerId: string;
-  playerName: string;
+export interface PresenceEntry {
+  uid: string;
+  name: string;
   lookId: string;
   placeId: string;
-  lastSeen: number;
+  x: number;
+  z: number;
+  ry: number;     // rotation y
+  anim: string;   // "idle" | "walk" | "dance"
+  say?: string;   // speech bubble text (5s)
+  t: number;      // server timestamp
 }
 
-const PRESENCE_TTL_MS = 60 * 1000; // 1 minute
+const PRESENCE_STALE_MS = 30_000;
 
-/** Update / create a player's presence record. */
+/** Write own presence to RTDB. Auto-removed on disconnect. */
+export function initPresence(uid: string, name: string, lookId: string, placeId: string) {
+  const r = ref(rtdb, `presence/${uid}`);
+  onDisconnect(r).remove();
+  void set(r, {
+    uid, name, lookId, placeId,
+    x: 0, z: 0, ry: 0, anim: "idle",
+    t: rtdbServerTimestamp(),
+  });
+  return r;
+}
+
+/** Update own presence (call max 4x/sec, only when state changes). */
 export async function updatePresence(
-  playerId: string,
-  playerName: string,
-  placeId: string,
-  lookId: string
+  uid: string,
+  patch: Partial<PresenceEntry>
 ): Promise<void> {
   try {
-    await setDoc(
-      doc(db, "presence", playerId),
-      {
-        playerId,
-        playerName,
-        lookId,
-        placeId,
-        lastSeen: Date.now(),
-      },
-      { merge: true }
-    );
+    await set(ref(rtdb, `presence/${uid}`), {
+      ...patch,
+      t: rtdbServerTimestamp(),
+    });
   } catch (e) {
-    console.warn("[firestore] updatePresence failed:", e);
+    console.warn("[rtdb] updatePresence:", e);
   }
 }
 
-/** Real-time listener for all online players (active in the last minute). */
+/** Remove own presence (on logout / leave). */
+export async function clearPresence(uid: string): Promise<void> {
+  try {
+    await remove(ref(rtdb, `presence/${uid}`));
+  } catch (e) {
+    console.warn("[rtdb] clearPresence:", e);
+  }
+}
+
+/** Subscribe to presence in a given zone (placeId). Filters stale entries. */
 export function listenToPresence(
-  cb: (presence: PresenceDoc[]) => void
-): () => void {
-  try {
-    // We listen to ALL presence docs, but filter client-side by TTL
-    // (Firestore `where` on timestamp requires an index — simpler this way)
-    const q = query(collection(db, "presence"), limit(200));
-    return onSnapshot(
-      q,
-      (snap) => {
-        const now = Date.now();
-        const active = snap.docs
-          .map((d) => ({ id: d.id, ...(d.data() as PresenceDoc) }))
-          .filter((p) => now - (p.lastSeen || 0) < PRESENCE_TTL_MS);
-        cb(active);
-      },
-      (err) => console.warn("[firestore] listenToPresence error:", err)
-    );
-  } catch (e) {
-    console.warn("[firestore] listenToPresence failed:", e);
-    return () => {};
-  }
+  placeId: string,
+  cb: (entries: PresenceEntry[]) => void
+): Unsubscribe {
+  const q = ref(rtdb, "presence");
+  const unsub = onValue(q, (snap) => {
+    const now = Date.now();
+    const list: PresenceEntry[] = [];
+    snap.forEach((child) => {
+      const v = child.val() as PresenceEntry;
+      if (!v || !v.uid) return;
+      // Stale check (server time may be missing on first write)
+      const age = v.t ? now - v.t : 0;
+      if (v.t && age > PRESENCE_STALE_MS) return;
+      if (v.placeId !== placeId) return;
+      list.push(v);
+    });
+    cb(list);
+  });
+  return unsub as unknown as Unsubscribe;
 }
 
-/** Remove a player's presence (called on logout). */
-export async function clearPresence(playerId: string): Promise<void> {
-  try {
-    await setDoc(
-      doc(db, "presence", playerId),
-      { lastSeen: 0 },
-      { merge: true }
-    );
-  } catch (e) {
-    console.warn("[firestore] clearPresence failed:", e);
-  }
+/** Subscribe to ALL presence entries (for PeopleSheet "elsewhere" section). */
+export function listenToAllPresence(
+  cb: (entries: PresenceEntry[]) => void
+): Unsubscribe {
+  const q = ref(rtdb, "presence");
+  const unsub = onValue(q, (snap) => {
+    const now = Date.now();
+    const list: PresenceEntry[] = [];
+    snap.forEach((child) => {
+      const v = child.val() as PresenceEntry;
+      if (!v || !v.uid) return;
+      const age = v.t ? now - v.t : 0;
+      if (v.t && age > PRESENCE_STALE_MS) return;
+      list.push(v);
+    });
+    cb(list);
+  });
+  return unsub as unknown as Unsubscribe;
+}
+
+// ============================================================
+// ADMIN ACTIONS (read-only on client)
+// ============================================================
+
+export interface AdminAction {
+  id: string;
+  adminId: string;
+  playerId: string;
+  playerName: string;
+  action: string;
+  field?: string | null;
+  amount?: number | null;
+  note?: string;
+  t: number;
+}
+
+export function listenToAdminActions(cb: (actions: AdminAction[]) => void): Unsubscribe {
+  const q = query(collection(db, "adminActions"), orderBy("t", "desc"), limit(100));
+  return onSnapshot(
+    q,
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<AdminAction, "id">) }))),
+    (err) => console.warn("[firestore] listenToAdminActions:", err)
+  );
+}
+
+export function listenToAllPlayers(cb: (players: Array<{ id: string } & PlayerProfile>) => void): Unsubscribe {
+  const q = query(collection(db, "players"), orderBy("lastSeen", "desc"), limit(200));
+  return onSnapshot(
+    q,
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as PlayerProfile) }))),
+    (err) => console.warn("[firestore] listenToPlayers:", err)
+  );
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+/** Fetch a player profile (one-time read). */
+export async function getPlayer(uid: string): Promise<PlayerProfile | null> {
+  const snap = await getDoc(doc(db, "players", uid));
+  return snap.exists() ? (snap.data() as PlayerProfile) : null;
 }

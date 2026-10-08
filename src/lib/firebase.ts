@@ -1,13 +1,16 @@
-// Firebase initialization for NaijaLavish
-// Uses the user-provided Firebase config (project: naijalavish)
-// Firestore is used for player data sync + admin actions.
+// Firebase client init for NaijaLavish.
+// Config is hardcoded per owner's request (no env vars on Vercel).
+// Realtime Database URL is required for presence + positions (Phase 2).
 
-import { getApps, initializeApp } from "firebase/app";
+import { getApps, initializeApp, getApp } from "firebase/app";
+import { getAuth, indexedDBLocalPersistence, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getDatabase } from "firebase/database";
 
 const firebaseConfig = {
   apiKey: "AIzaSyADIDDptkJkgpOBEn4CfZIDajF1eBWlrXw",
   authDomain: "naijalavish.firebaseapp.com",
+  databaseURL: "https://naijalavish-default-rtdb.firebaseio.com",
   projectId: "naijalavish",
   storageBucket: "naijalavish.firebasestorage.app",
   messagingSenderId: "925863756982",
@@ -15,29 +18,33 @@ const firebaseConfig = {
   measurementId: "G-RZCHK4HX52",
 };
 
-// Initialize once (HMR-safe)
+// HMR-safe init
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 
-// Firestore database (browser-safe; works on Vercel static/serverless)
+// Auth (anonymous sign-in for players, email/password for admin)
+export const auth = getAuth(app);
+// Use local persistence so players stay signed in across reloads
+if (typeof window !== "undefined") {
+  setPersistence(auth, browserLocalPersistence).catch(() => {});
+}
+
+// Firestore (chat log, player profiles, admin docs, audit trail)
 export const db = getFirestore(app);
 
-// Lazy-init Google Analytics (browser-only, gracefully skips if blocked)
+// Realtime Database (presence + positions, low-latency multiplayer)
+export const rtdb = getDatabase(app);
+
+// Lazy analytics (browser-only, gracefully skips if blocked)
 if (typeof window !== "undefined") {
   import("firebase/analytics")
     .then(({ getAnalytics, isSupported }) =>
       isSupported().then((ok) => {
         if (ok) {
-          try {
-            getAnalytics(app);
-          } catch {
-            // Analytics blocked (ad blocker / privacy mode) — ignore
-          }
+          try { getAnalytics(app); } catch { /* blocked */ }
         }
       })
     )
-    .catch(() => {
-      // Analytics module failed to load — ignore
-    });
+    .catch(() => {});
 }
 
 export default app;
