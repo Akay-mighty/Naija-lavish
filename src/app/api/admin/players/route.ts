@@ -8,15 +8,20 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const guard = await requireAdmin(req);
-  if (!guard.ok) return guard.res;
+  try {
+    const guard = await requireAdmin(req);
+    if (!guard.ok) return guard.res;
 
-  const snap = await adminDb()
-    .collection("players")
-    .orderBy("lastSeen", "desc")
-    .limit(200)
-    .get();
+    const snap = await adminDb()
+      .collection("players")
+      .orderBy("lastSeen", "desc")
+      .limit(200)
+      .get();
 
-  const players = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  return json({ ok: true, players });
+    const players = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return json({ ok: true, players });
+  } catch (e: any) {
+    console.error("[/api/admin/players] error:", e?.message);
+    return json({ ok: false, error: e?.message || "Server error." }, 500);
+  }
 }
