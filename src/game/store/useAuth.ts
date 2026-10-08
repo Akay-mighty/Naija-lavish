@@ -48,7 +48,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       const cred = await signInAnonymously(auth);
       const token = await cred.user.getIdToken();
       set({
-        status: "anon",
+        status: get().status === "player" ? "player" : "anon",
         user: cred.user,
         uid: cred.user.uid,
         idToken: token,
@@ -82,7 +82,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       const token = await cred.user.getIdToken();
       // Check admins/{uid}
       const adminDoc = await getDoc(doc(db, "admins", cred.user.uid));
-      if (!adminDoc.exists) {
+      if (!adminDoc.exists()) {
         await fbSignOut(auth);
         return { ok: false, error: "Not an admin account." };
       }
@@ -140,29 +140,63 @@ export const useAuth = create<AuthState>((set, get) => ({
 }));
 
 // Subscribe to auth state changes
+// NOTE: `set` only exists inside the create() callback, so module-level code
+// must use useAuth.setState (this was the "set is not defined" crash that left
+// the app stuck on the splash screen forever).
 if (typeof window !== "undefined") {
-  onAuthStateChanged(auth, async (user) => {
-    if (user) {
-      const token = await user.getIdToken();
-      set({
-        user,
-        uid: user.uid,
-        idToken: token,
-        status: user.isAnonymous ? "anon" : "player",
-      });
-      // Check if profile exists
-      const snap = await getDoc(doc(db, "players", user.uid));
-      if (snap.exists() && user.isAnonymous) {
-        set({ status: "player", isPlayer: true });
-      } else if (snap.exists()) {
-        set({ isPlayer: true });
+  onAuthStateChanged(
+    auth,
+    async (user) => {
+      try {
+        if (user) {
+          const token = await user.getIdToken();
+          const cur = useAuth.getState();
+          useAuth.setState({
+            user,
+            uid: user.uid,
+            idToken: token,
+            soloMode: false,
+            status:
+              cur.status === "admin" ? "admin" : user.isAnonymous ? "anon" : "player",
+          });
+          // Check if profile exists (never let a Firestore error block the UI)
+          try {
+            const snap = await getDoc(doc(db, "players", user.uid));
+            if (snap.exists()) {
+              useAuth.setState((st) => ({
+                isPlayer: true,
+                status: st.status === "anon" ? "player" : st.status,
+              }));
+            }
+          } catch (e: any) {
+            console.warn("[auth] profile check failed:", e?.message);
+          }
+        } else {
+          // Not signed in — try anonymous sign-in
+          const s = useAuth.getState();
+          if (s.status !== "admin" && !s.soloMode) {
+            if (s.status === "loading") {
+              // leave "loading" until signIn resolves (it falls back to solo mode on failure)
+            }
+            void s.signIn();
+          }
+        }
+      } catch (e: any) {
+        console.warn("[auth] state handler failed — solo mode:", e?.message);
+        useAuth.setState({ status: "signed-out", soloMode: true, error: e?.message || "Auth failed" });
       }
-    } else {
-      // Not signed in — try anonymous sign-in
-      const s = useAuth.getState();
-      if (s.status !== "admin" && !s.soloMode) {
-        s.signIn();
-      }
+    },
+    (err) => {
+      console.warn("[auth] listener error — solo mode:", err?.message);
+      useAuth.setState({ status: "signed-out", soloMode: true, error: err?.message || "Auth failed" });
     }
-  });
+  );
+
+  // Safety net: never sit on the splash screen forever (slow/blocked network)
+  window.setTimeout(() => {
+    if (useAuth.getState().status === "loading") {
+      console.warn("[auth] timed out — continuing in solo mode");
+      useAuth.setState({ status: "signed-out", soloMode: true, error: "Auth timed out" });
+    }
+  }, 8000);
 }

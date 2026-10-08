@@ -260,13 +260,18 @@ export const usePlayer = create<PlayerStore>()(
     }),
     {
       name: "naijalavish-player",
-      storage: createJSONStorage(() => (typeof window === "undefined" ? (undefined as any) : localStorage)),
+      storage: createJSONStorage(() =>
+        typeof window === "undefined"
+          ? ({ getItem: () => null, setItem: () => {}, removeItem: () => {} } as any)
+          : localStorage
+      ),
       partialize: ({ screen, ...rest }) => rest as PlayerState,
       version: 3,
-      // Migrate from older versions (v1/v2 had different shape) — discard + start fresh
-      migrate: () => {
-        // Return null to discard old state and start fresh
-        return null as any;
+      // Older versions (v1/v2) had a different shape — drop them and start fresh.
+      // Must return an object (not null) or zustand's merge can throw.
+      migrate: (persisted: unknown, version: number) => {
+        if (version < 3 || !persisted || typeof persisted !== "object") return {} as any;
+        return persisted as any;
       },
     }
   )
