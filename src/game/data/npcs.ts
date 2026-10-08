@@ -1,58 +1,37 @@
-// NPC names, dialogue lines, and quick chat reactions.
-// NPCs fill the city so the world feels alive even without a real-time server.
+// NPCs in NaijaLavish are WORLD CHARACTERS ONLY — they stand at places, can be
+// tapped for a speech bubble, but they NEVER write into the chat panel, NEVER
+// count as online players, and NEVER have a presence entry in RTDB.
+// Real chat comes from real players via Firestore (see Chat.tsx).
 
 export interface NPC {
   id: string;
   name: string;
   emoji: string;
   vibe: "calm" | "hustler" | "bigboy" | "aunty" | "aboki" | "yankee";
+  placeId: string;        // where they stand in the world
+  pos: [number, number];  // world x, z
+  line: string;           // single speech-bubble line shown when tapped
 }
 
-const NAMES: Array<[string, NPC["vibe"], string]> = [
-  ["Tunde",     "hustler", "🧑🏿"],
-  ["Adamu",     "aboki",   "👨🏿"],
-  ["Ekaette",   "aunty",   "👩🏿"],
-  ["Chidinma",  "bigboy",  "👩🏾"],
-  ["Ibrahim",   "calm",    "🧔🏿"],
-  ["Folake",    "aunty",   "🧕🏿"],
-  ["Sani",      "aboki",   "🧑🏾"],
-  ["Ngozi",     "bigboy",  "👩🏿"],
-  ["Emeka",     "hustler", "👨🏾"],
-  ["Hadiza",    "aunty",   "🧕🏾"],
-  ["Yakubu",    "calm",    "🧔🏾"],
-  ["Bisi",      "bigboy",  "👩🏿"],
-  ["Bayo",      "hustler", "🧑🏿"],
-  ["Zainab",    "aunty",   "👩🏾"],
-  ["Kunle",     "yankee",  "🧑🏻‍🦱"],
-  ["Amaka",     "bigboy",  "👩🏿"],
-  ["Dauda",     "aboki",   "🧔🏿"],
-  ["Tari",      "calm",    "👩🏾"],
+// Each NPC has exactly ONE fixed line — no random chatter, no fake conversation.
+export const NPCS: NPC[] = [
+  { id: "npc-1", name: "Mama Bola",  emoji: "👩🏿", vibe: "aunty",   placeId: "wuse-market",     pos: [-11, 7],  line: "Bole fresh from the fire! ₦200 only." },
+  { id: "npc-2", name: "Mallam Sani", emoji: "👨🏿", vibe: "aboki",   placeId: "wuse-market",     pos: [-13, 5],  line: "Change dollars here, best rate for you." },
+  { id: "npc-3", name: "Driver Emeka",emoji: "🧑🏿", vibe: "hustler", placeId: "area1",           pos: [-5, 5],   line: "Okada ready! Where you dey go?" },
+  { id: "npc-4", name: "Aunty Folake",emoji: "🧕🏿", vibe: "aunty",   placeId: "garki-market",    pos: [-3, 11],  line: "Ankara material, fine one. Come look." },
+  { id: "npc-5", name: "Big Boy Tunde",emoji: "🧔🏿", vibe: "bigboy", placeId: "transcorp",       pos: [11, -7],  line: "Bottle service only. You know what's up." },
+  { id: "npc-6", name: "Uncle Yakubu",emoji: "🧔🏾", vibe: "calm",   placeId: "millennium",      pos: [5, 1],    line: "Sit down, breathe. The park is free." },
+  { id: "npc-7", name: "Hadiza",      emoji: "🧕🏾", vibe: "aunty",   placeId: "night-market",    pos: [-7, -7],  line: "Zobo cold, suya hot. Take your pick." },
+  { id: "npc-8", name: "Tourist Bayo",emoji: "🧑🏻", vibe: "yankee",  placeId: "city-gate",       pos: [15, 1],   line: "Just touched down from yankee. This gate na proper flex." },
 ];
 
-export const NPCS: NPC[] = NAMES.map(([name, vibe, emoji], i) => ({
-  id: `npc-${i}`,
-  name,
-  emoji,
-  vibe,
-}));
+// NPCs grouped by placeId for quick lookup
+export const NPCS_BY_PLACE: Record<string, NPC[]> = NPCS.reduce((acc, n) => {
+  (acc[n.placeId] ||= []).push(n);
+  return acc;
+}, {} as Record<string, NPC[]>);
 
-// Quick chat lines (Pidgin, taken from phlifestyle flavour)
-export const QUICK_LINES = [
-  "How far? 💪",
-  "You dey ok?",
-  "Make we link up later.",
-  "I dey hustle, no time.",
-  "Big boy things!",
-  "Omo, traffic mad today.",
-  "You don chop?",
-  "Spray me something abeg.",
-  "Wetin dey happen?",
-  "Abeg, no stress me.",
-  "We move 💨",
-  "Sharp sharp, no dulling.",
-];
-
-// Sticker reactions (used by chat-react buttons)
+// Sticker reactions — user-triggered only (sent through /api/chat like a message)
 export const STICKERS = [
   { id: "fire",    emoji: "🔥", label: "Hot" },
   { id: "laugh",   emoji: "😂", label: "Laugh" },
@@ -64,93 +43,14 @@ export const STICKERS = [
   { id: "shrug",   emoji: "🤷🏿", label: "Shrug" },
 ];
 
-// Per-vibe NPC dialogue pools — keep it short and lively
-export const NPC_LINES: Record<NPC["vibe"], string[]> = {
-  hustler: [
-    "Money must be made, no dulling 🔥",
-    "I just finish shift, my back wan break.",
-    "You see danfo fare today? E don double.",
-    "Big boy things loading...",
-    "I dey find customer, you need okada?",
-  ],
-  aboki: [
-    "Come buy suya, fresh pepper today.",
-    "Exchange rate don go up again o.",
-    "I get change, no worry.",
-    "Customer, you look nice today.",
-    "We dey close late, come back anytime.",
-  ],
-  aunty: [
-    "My pikkin, you don chop?",
-    "How your mama? Greet her for me.",
-    "Come buy akara, hot one just land.",
-    "No wanah, no follow bad boys.",
-    "May God bless your hustle, my dear.",
-  ],
-  bigboy: [
-    "Just came back from yankee last week 🙃",
-    "My G-Wagon dey workshop, I drive Corolla today.",
-    "Where the owambe dey tonight?",
-    "Bottle service or nothing, you know what's up.",
-    "₦5m no be money again these days sha.",
-  ],
-  calm: [
-    "The breeze at Jabi nice today.",
-    "I just dey observe things, no stress.",
-    "Sometimes you gats just sit down.",
-    "How your side? Hope cool.",
-    "Make we link up for Unity Fountain later.",
-  ],
-  yankee: [
-    "Just touched down last week, jet lag wan finish me.",
-    "Where the best suya spot? I miss am die.",
-    "Naija changed o, Abuja fine well well.",
-    "Bro, you still dey hustle here? Respect.",
-    "Got my foreign passport but na Naija be home.",
-  ],
-};
-
-// Pick a random NPC and a line for them
-export function randomNPC(): NPC {
-  return NPCS[Math.floor(Math.random() * NPCS.length)];
-}
-
-export function randomLine(npc: NPC): string {
-  const lines = NPC_LINES[npc.vibe];
-  return lines[Math.floor(Math.random() * lines.length)];
-}
-
-// Rich list (mock top spenders — feels like the original's leaderboard)
-export const RICH_LIST = [
-  { rank: 1, name: "Don Jazzy M",    amount: 4_850_000, emoji: "👑" },
-  { rank: 2, name: "Chief Okoro",    amount: 2_120_000, emoji: "🎩" },
-  { rank: 3, name: "Alhaja Sade",    amount: 1_780_000, emoji: "🧕🏿" },
-  { rank: 4, name: "Young Tunde",    amount:   945_000, emoji: "🧑🏿" },
-  { rank: 5, name: "Aunty Folake",   amount:   612_000, emoji: "👩🏿" },
-  { rank: 6, name: "Boss Emeka",    amount:   488_000, emoji: "👨🏾" },
-  { rank: 7, name: "Hadiza M",      amount:   365_000, emoji: "🧕🏾" },
-  { rank: 8, name: "Yankee Bayo",   amount:   298_000, emoji: "🧑🏻" },
+// Quick lines — user-triggered only (sent through /api/chat)
+export const QUICK_LINES = [
+  "How far? 💪",
+  "You dey ok?",
+  "Make we link up later.",
+  "I dey hustle, no time.",
+  "Big boy things!",
+  "Wetin dey happen?",
+  "We move 💨",
+  "Sharp sharp, no dulling.",
 ];
-
-// Quick toast one-liners used when needs drop too low
-export const NEED_LINES = {
-  hunger: [
-    "Your belle dey rumble. Go find food.",
-    "Hunger wan finish you. Chop something abeg.",
-    "Man shall not live by hustle alone. Go eat.",
-  ],
-  energy: [
-    "Energy don finish. Go sleep or sit down small.",
-    "Body no be firewood. Rest small.",
-    "You wan collapse? Go rest abeg.",
-  ],
-  vibe: [
-    "Your vibe dey low. Go link up somewhere.",
-    "Spirit dey down. Dance or stroll.",
-    "Even big boys need to flex. Go out small.",
-  ],
-};
-
-export function pickLine(arr: string[]): string {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
