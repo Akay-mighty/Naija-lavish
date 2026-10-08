@@ -168,6 +168,8 @@ if (typeof window !== "undefined") {
     async (user) => {
       try {
         if (user) {
+          // EXISTING SESSION — user is already signed in (Google or anonymous).
+          // Just refresh the token + check profile. Do NOT create a new anon user.
           const token = await user.getIdToken();
           const cur = useAuth.getState();
           useAuth.setState({
@@ -189,9 +191,13 @@ if (typeof window !== "undefined") {
             console.warn("[auth] profile check failed:", e?.message);
           }
         } else {
+          // NOT signed in — only auto-sign-in anonymously if we've never had a session.
+          // This prevents creating a new anon user on every refresh (which would log out
+          // the previous session). The TitleScreen triggers sign-in when the user clicks.
           const s = useAuth.getState();
-          if (s.status !== "admin" && !s.soloMode) {
-            void s.signIn();
+          if (s.status === "loading") {
+            // First load — don't auto-sign-in; let user choose from TitleScreen
+            useAuth.setState({ status: "signed-out" });
           }
         }
       } catch (e: any) {
@@ -208,8 +214,7 @@ if (typeof window !== "undefined") {
   // Safety net: never sit on splash forever
   window.setTimeout(() => {
     if (useAuth.getState().status === "loading") {
-      console.warn("[auth] timed out — continuing in solo mode");
-      useAuth.setState({ status: "signed-out", soloMode: true, error: "Auth timed out" });
+      useAuth.setState({ status: "signed-out" });
     }
   }, 8000);
 }
