@@ -7,6 +7,7 @@ import { usePlayer } from "../store/usePlayer";
 import { PLACE_BY_ID, START_PLACE_ID } from "../data/places";
 import { toast } from "../store/useToasts";
 import { sfx } from "../lib/sound";
+import { apiFetch } from "../lib/apiFetch";
 import {
   listenToPlayer,
   initPresence,
@@ -141,20 +142,13 @@ export default function Game() {
     if (lastClaim === today) return;
     // Try to claim daily reward
     (async () => {
-      try {
-        const res = await fetch("/api/daily", {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${idToken}` },
-        });
-        const data = await res.json();
-        if (res.ok && data.ok) {
-          // Bank-SMS style toast
-          setTimeout(() => {
-            toast(`Alert don enter! Daily reward: ₦${data.reward.toLocaleString()} (Day ${data.streak}/7)`, "success", "💰");
-            sfx.play("cashEarn");
-          }, 1500);
-        }
-      } catch {}
+      const r = await apiFetch("/api/daily", { method: "POST", idToken });
+      if (r.ok && r.data?.ok) {
+        setTimeout(() => {
+          toast(`Alert don enter! Daily reward: ₦${r.data.reward.toLocaleString()} (Day ${r.data.streak}/7)`, "success", "💰");
+          sfx.play("cashEarn");
+        }, 1500);
+      }
     })();
   }, [idToken]);
 

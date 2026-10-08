@@ -7,6 +7,7 @@ import { usePlayer } from "../store/usePlayer";
 import { LOOKS } from "../data/items";
 import { toast } from "../store/useToasts";
 import { sfx } from "../lib/sound";
+import { apiFetch } from "../lib/apiFetch";
 
 type Tab = "signup" | "login";
 
@@ -63,22 +64,23 @@ export default function TitleScreen() {
       const token = await getIdToken();
       if (!token) throw new Error("Auth failed — try again.");
 
-      // 2. Create player profile on server
-      const res = await fetch("/api/player/init", {
+      // 2. Create player profile on server (via apiFetch — handles HTML errors)
+      const result = await apiFetch("/api/player/init", {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({
+        body: {
           name: name.trim(),
           username: username.trim(),
           lookId,
           gender,
-          adult: true, // server trusts the DOB check we did here; in production use a 3rd-party age verification
-        }),
+          adult: true,
+        },
+        idToken: token,
       });
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || "Sign-up failed.");
+      if (!result.ok || !result.data?.ok) {
+        throw new Error(result.error || "Sign-up failed.");
+      }
 
-      syncFromProfile(data.player);
+      syncFromProfile(result.data.player);
       setScreen("game");
       toast(`Welcome to NaijaLavish, ${name.trim()}!`, "success", "🎉");
     } catch (e: any) {

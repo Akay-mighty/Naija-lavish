@@ -9,6 +9,7 @@ import { ITEMS, ITEM_BY_ID } from "../data/items";
 import { naira, shortNaira } from "../lib/format";
 import { toast } from "../store/useToasts";
 import { sfx } from "../lib/sound";
+import { apiFetch } from "../lib/apiFetch";
 
 type App = "gist" | "bank" | "wallet" | "photos" | "contacts" | "settings" | "shop";
 
@@ -166,23 +167,19 @@ function BankApp() {
   async function callBank(actionId: "deposit" | "withdraw") {
     if (!idToken || busy || amount <= 0) return;
     setBusy(true);
-    try {
-      const res = await fetch("/api/action", {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ action: "bank", actionId, amount }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        toast(data.error || "Bank failed.", "warn", "💸");
-        return;
-      }
-      applyActionResult(data.result);
-      toast(actionId === "deposit" ? `Deposited ${naira(amount)}.` : `Withdrew ${naira(amount)}.`, "success", actionId === "deposit" ? "🏦" : "💵");
-      sfx.play(actionId === "deposit" ? "cashSpend" : "cashEarn");
-    } finally {
-      setBusy(false);
+    const r = await apiFetch("/api/action", {
+      method: "POST",
+      body: { action: "bank", actionId, amount },
+      idToken,
+    });
+    setBusy(false);
+    if (!r.ok || !r.data?.ok) {
+      toast(r.error || "Bank failed.", "warn", "💸");
+      return;
     }
+    applyActionResult(r.data.result);
+    toast(actionId === "deposit" ? `Deposited ${naira(amount)}.` : `Withdrew ${naira(amount)}.`, "success", actionId === "deposit" ? "🏦" : "💵");
+    sfx.play(actionId === "deposit" ? "cashSpend" : "cashEarn");
   }
 
   function deposit() { void callBank("deposit"); }

@@ -9,6 +9,7 @@ import { ITEMS, ITEM_BY_ID } from "../data/items";
 import { naira } from "../lib/format";
 import { toast } from "../store/useToasts";
 import { sfx } from "../lib/sound";
+import { apiFetch } from "../lib/apiFetch";
 
 interface PlaceSheetProps {
   open: boolean;
@@ -55,25 +56,20 @@ export default function PlaceSheet({ open, onClose, onWalkHere }: PlaceSheetProp
 
   if (!place) return null;
 
-  // ---- Call /api/action with the ID token ----
+  // ---- Call /api/action with the ID token (via apiFetch — handles HTML errors) ----
   async function callServer(
     action: string,
     actionId: string,
     amount?: number
   ): Promise<{ ok: boolean; result?: any; error?: string }> {
     if (!idToken) return { ok: false, error: "Not signed in." };
-    try {
-      const res = await fetch("/api/action", {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ action, actionId, placeId, amount }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) return { ok: false, error: data.error || "Action failed." };
-      return { ok: true, result: data.result };
-    } catch (e: any) {
-      return { ok: false, error: e?.message || "Network error." };
-    }
+    const r = await apiFetch("/api/action", {
+      method: "POST",
+      body: { action, actionId, placeId, amount },
+      idToken,
+    });
+    if (!r.ok || !r.data?.ok) return { ok: false, error: r.error || "Action failed." };
+    return { ok: true, result: r.data.result };
   }
 
   async function runAction(a: PlaceAction) {

@@ -10,6 +10,7 @@ import {
 } from "@/lib/firestore";
 import { useAuth } from "@/game/store/useAuth";
 import { naira, shortNaira } from "@/game/lib/format";
+import { apiFetch } from "@/game/lib/apiFetch";
 
 type Tab = "overview" | "players" | "actions" | "settings";
 
@@ -76,19 +77,16 @@ export default function AdminDashboard() {
     setTab("overview");
   }
 
-  // ---- Admin actions (call server routes) ----
+  // ---- Admin actions (call server routes via apiFetch — handles HTML errors) ----
   async function adminAction(player: PlayerWithId, action: string, field?: string, amount?: number) {
     if (!idToken) return;
-    try {
-      const res = await fetch(`/api/admin/player/${player.id}`, {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ action, field, amount }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || "Action failed.");
-    } catch (e: any) {
-      setError(e?.message || "Action failed.");
+    const r = await apiFetch(`/api/admin/player/${player.id}`, {
+      method: "POST",
+      body: { action, field, amount },
+      idToken,
+    });
+    if (!r.ok || !r.data?.ok) {
+      setError(r.error || "Action failed.");
     }
   }
 

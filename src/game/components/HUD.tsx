@@ -7,6 +7,7 @@ import { naira, shortNaira, clockFromHour } from "../lib/format";
 import { PLACE_BY_ID } from "../data/places";
 import { QUEST_STEPS } from "../data/quests";
 import { sfx } from "../lib/sound";
+import { apiFetch } from "../lib/apiFetch";
 
 // Map need value (0-100) to a face emoji + word
 function moodFor(vibe: number, hunger: number, energy: number): { face: string; word: string } {
@@ -79,17 +80,14 @@ export default function HUD() {
   async function claimQuest() {
     if (!idToken || !currentStep) return;
     sfx.play("click");
-    try {
-      const res = await fetch("/api/player/quest", {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ stepId: currentStep.id }),
-      });
-      const data = await res.json();
-      if (res.ok && data.ok) {
-        sfx.play("cashEarn");
-      }
-    } catch {}
+    const r = await apiFetch("/api/player/quest", {
+      method: "POST",
+      body: { stepId: currentStep.id },
+      idToken,
+    });
+    if (r.ok && r.data?.ok) {
+      sfx.play("cashEarn");
+    }
   }
 
   return (
