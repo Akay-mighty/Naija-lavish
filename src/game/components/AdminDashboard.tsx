@@ -42,20 +42,39 @@ export default function AdminDashboard() {
     setLoading(true);
     setFirestoreError(null);
 
+    // `got` is a plain local flag. The old code checked the `loading` state inside the timer,
+    // but that value was frozen when the effect started (always true), so the "Can't reach
+    // Firestore" banner popped up after 8 seconds even when the players had already loaded.
+    let got = false;
+    const NOT_REACHED =
+      "Can't reach Firestore. Either the Firestore API is not enabled in your Firebase project yet, or your security rules are blocking access. See the Settings tab → 'Enable Firestore' instructions.";
+
     const timeout = setTimeout(() => {
-      if (loading) {
-        setFirestoreError(
-          "Can't reach Firestore. Either the Firestore API is not enabled in your Firebase project yet, or your security rules are blocking access. See the Settings tab → 'Enable Firestore' instructions."
-        );
+      if (!got) {
+        setFirestoreError(NOT_REACHED);
         setLoading(false);
       }
     }, 8000);
 
-    const unsubPlayers = listenToAllPlayers((p) => {
-      setPlayers(p);
-      setLoading(false);
-      setFirestoreError(null);
-    });
+    const unsubPlayers = listenToAllPlayers(
+      (p) => {
+        got = true;
+        clearTimeout(timeout);
+        setPlayers(p);
+        setLoading(false);
+        setFirestoreError(null);
+      },
+      (err) => {
+        if (got) return; // already showing data; a later hiccup should not wipe the list
+        clearTimeout(timeout);
+        setFirestoreError(
+          err?.code === "permission-denied"
+            ? "Firestore refused to share the players list. Publish the Firestore rules from FIREBASE_SETUP.md, then reload."
+            : NOT_REACHED
+        );
+        setLoading(false);
+      }
+    );
     const unsubActions = listenToAdminActions((a) => setActions(a));
     return () => {
       clearTimeout(timeout);
@@ -523,7 +542,7 @@ export default function AdminDashboard() {
                         {actions.map((a) => (
                           <tr key={a.id} className="border-t border-slate-100">
                             <td className="px-4 py-3 text-[11px] text-slate-400 whitespace-nowrap">
-                              {a.timestamp ? new Date(a.timestamp).toLocaleString() : "—"}
+                              {a.t ? new Date(a.t).toLocaleString() : "—"}
                             </td>
                             <td className="px-4 py-3">
                               <span className="inline-flex items-center gap-1.5">
