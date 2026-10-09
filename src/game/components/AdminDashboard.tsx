@@ -480,6 +480,8 @@ export default function AdminDashboard() {
                                       onSetNeed={(need, val) => setNeed(p, need, val)}
                                       onToggleBan={() => toggleBan(p)}
                                       onReset={() => resetPlayer(p)}
+                                      onSuspend={(reason) => adminAction(p, "suspend", reason)}
+                                      onWarn={(reason) => adminAction(p, "warn", reason)}
                                     />
                                   </td>
                                 </tr>
@@ -694,6 +696,8 @@ function PlayerActions({
   onSetNeed,
   onToggleBan,
   onReset,
+  onSuspend,
+  onWarn,
 }: {
   player: PlayerWithId;
   onCredit: (amt: number) => void;
@@ -701,6 +705,8 @@ function PlayerActions({
   onSetNeed: (need: "hunger" | "energy" | "vibe", val: number) => void;
   onToggleBan: () => void;
   onReset: () => void;
+  onSuspend: (reason: string) => void;
+  onWarn: (reason: string) => void;
 }) {
   const [amount, setAmount] = useState(1000);
   const presets = [500, 1000, 5000, 10000, 100000];
@@ -787,6 +793,24 @@ function PlayerActions({
           className="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 text-xs font-semibold hover:bg-amber-200"
         >
           ↻ Reset to defaults
+        </button>
+        <button
+          onClick={() => {
+            const reason = prompt(`Warn ${player.name}? Enter reason:`);
+            if (reason) onWarn(reason);
+          }}
+          className="px-3 py-1.5 rounded-lg bg-orange-100 text-orange-700 text-xs font-semibold hover:bg-orange-200"
+        >
+          ⚠ Warn ({(player as any).warnings || 0})
+        </button>
+        <button
+          onClick={() => {
+            const reason = prompt(`Suspend ${player.name}? Enter reason:`);
+            if (reason) onSuspend(reason);
+          }}
+          className="px-3 py-1.5 rounded-lg bg-purple-100 text-purple-700 text-xs font-semibold hover:bg-purple-200"
+        >
+          🔒 Suspend
         </button>
         <button
           onClick={() => {

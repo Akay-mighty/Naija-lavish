@@ -121,7 +121,7 @@ function PhoneApp({ app }: { app: App }) {
 function GistApp() {
   const chat = usePlayer((s) => s.chat);
   return (
-    <div className="max-h-[50vh] overflow-y-auto no-scrollbar">
+    <div className="overflow-y-auto no-scrollbar">
       <h3 className="font-semibold text-white mb-2">Gist</h3>
       <ul className="flex flex-col gap-1.5">
         {chat.slice(-30).map((m) => (
@@ -336,7 +336,7 @@ function ShopApp() {
           </button>
         ))}
       </div>
-      <div className="max-h-[50vh] overflow-y-auto no-scrollbar">
+      <div className="overflow-y-auto no-scrollbar">
         <ul className="flex flex-col gap-1.5">
           {filtered.map((item) => {
             const owned = ownsItem(item.id);
