@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { usePlayer } from "../store/usePlayer";
+import { useAuth } from "../store/useAuth";
 
 // Brand logo (mini SVG: round-corner square with Naija-green + a "N₦" mark)
 function Logo({ size = 64 }: { size?: number }) {
@@ -48,8 +49,10 @@ function Logo({ size = 64 }: { size?: number }) {
 
 export default function Landing() {
   const setScreen = usePlayer((s) => s.setScreen);
+  // "Continue playing" only when you are really signed in (a saved name alone is not enough)
+  const signedIn = useAuth((s) => !!s.uid);
   const hasAccount = usePlayer(
-    (s) => s.name && (s.username || s.isGuest)
+    (s) => signedIn && s.name && (s.username || s.isGuest)
   );
 
   return (

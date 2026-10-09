@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useAuth } from "../store/useAuth";
 import { usePlayer } from "../store/usePlayer";
@@ -8,6 +8,7 @@ import { PLACE_BY_ID, START_PLACE_ID } from "../data/places";
 import { toast } from "../store/useToasts";
 import { sfx } from "../lib/sound";
 import { apiFetch } from "../lib/apiFetch";
+import { useRoute, openSheet, closeSheet } from "../lib/nav";
 import {
   listenToPlayer,
   initPresence,
@@ -63,7 +64,14 @@ export default function Game() {
   const setPlace = usePlayer((s) => s.setPlace);
   const advanceHour = usePlayer((s) => s.advanceHour);
 
-  const [sheet, setSheet] = useState<Sheet>(null);
+  // The open sheet lives in the URL (#game/map ...) so the phone's Back button closes it
+  // instead of leaving the game.
+  const route = useRoute();
+  const sheet: Sheet = route.screen === "game" ? route.sheet : null;
+  const setSheet = useCallback((s: Sheet) => {
+    if (s) openSheet(s);
+    else closeSheet();
+  }, []);
   const [sheetPlaceId, setSheetPlaceId] = useState<string>(placeId);
   const [targetPlaceId, setTargetPlaceId] = useState<string | null>(null);
   const [hideUI, setHideUI] = useState(false);

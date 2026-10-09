@@ -8,6 +8,7 @@ import { LOOKS } from "../data/items";
 import { toast } from "../store/useToasts";
 import { sfx } from "../lib/sound";
 import { apiFetch } from "../lib/apiFetch";
+import { getPlayer, type PlayerProfile } from "@/lib/firestore";
 
 type Tab = "signup" | "login";
 
@@ -20,6 +21,32 @@ function calcAge(dob: string): number {
   const m = now.getMonth() - d.getMonth();
   if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
   return age;
+}
+
+/** Read a saved profile straight from Firestore (no server call). Returns null if none / unreachable. */
+async function loadProfile(uid: string): Promise<PlayerProfile | null> {
+  try {
+    return await Promise.race([
+      getPlayer(uid),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000)),
+    ]);
+  } catch {
+    return null;
+  }
+}
+
+function friendlyAuthError(msg?: string): string {
+  const m = msg || "";
+  if (m.includes("popup-closed-by-user") || m.includes("cancelled-popup-request"))
+    return "You closed the Google window. Tap the button to try again.";
+  if (m.includes("popup-blocked"))
+    return "Your browser blocked the Google window. Allow pop-ups for this site and try again.";
+  if (m.includes("unauthorized-domain"))
+    return "This site's address is not allowed for Google sign-in yet. In Firebase: Authentication → Settings → Authorized domains → add your Vercel address.";
+  if (m.includes("operation-not-allowed"))
+    return "This sign-in method is switched off. In Firebase: Authentication → Sign-in method → enable it.";
+  if (m.includes("network-request-failed")) return "No internet. Check your connection and try again.";
+  return m || "Sign-in failed. Try again.";
 }
 
 function GoogleIcon({ size = 18 }: { size?: number }) {
@@ -49,6 +76,7 @@ export default function TitleScreen() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [agreed, setAgreed] = useState(false);
 
   const looks = LOOKS.filter((l) => l.gender === gender);
   const age = calcAge(dob);
@@ -67,46 +95,44 @@ export default function TitleScreen() {
     try {
       const result = await signInWithGoogle();
       if (!result.ok) {
-        setError(result.error || "Google sign-in failed.");
-        setGoogleLoading(false);
+        setError(friendlyAuthError(result.error));
         return;
       }
+      const uid = useAuth.getState().uid;
       const token = await getIdToken();
-      if (!token) throw new Error("Auth failed after Google sign-in.");
+      if (!uid || !token) throw new Error("Auth failed after Google sign-in. Try again.");
 
-      // Create or fetch player profile on server
-      const profileRes = await apiFetch("/api/player/init", {
-        method: "POST",
-        body: {
-          name: name.trim() || useAuth.getState().user?.displayName || "Player",
-          username: username.trim(),
-          lookId,
-          gender,
-          adult: true,
-        },
-        idToken: token,
-      });
+      // Returning player? Their profile is already saved, so no server call is needed.
+      let profile = await loadProfile(uid);
 
-      if (!profileRes.ok || !profileRes.data?.ok) {
-        // Show the error — don't silently skip
-        setError(profileRes.error || "Failed to create profile. Please try again.");
-        setGoogleLoading(false);
-        return;
+      if (!profile) {
+        // New player: we need the 18+ details first.
+        if (!name.trim() || !dob || age < 18 || !agreed) {
+          setTab("signup");
+          setError("Almost there! Fill your name and date of birth (18+), tick the box, then tap Sign up.");
+          if (!name.trim()) setName(useAuth.getState().user?.displayName?.split(" ")[0]?.slice(0, 16) || "");
+          return;
+        }
+        const r = await apiFetch("/api/player/init", {
+          method: "POST",
+          body: { name: name.trim(), username: username.trim(), lookId, gender, adult: true },
+          idToken: token,
+        });
+        if (!r.ok || !r.data?.player) throw new Error(r.error || "Could not create your player.");
+        profile = r.data.player as PlayerProfile;
       }
 
-      if (profileRes.data.player) {
-        syncFromProfile(profileRes.data.player);
-      }
+      syncFromProfile(profile);
       setScreen("game");
-      toast("Welcome to NaijaLavish!", "success", "🎉");
+      toast(`Welcome to NaijaLavish, ${profile.name}!`, "success", "🎉");
     } catch (e: any) {
-      setError(e?.message || "Google sign-in failed.");
+      setError(friendlyAuthError(e?.message));
     } finally {
       setGoogleLoading(false);
     }
   }
 
-  // ---- Anonymous signup ----
+  // ---- Guest / new account signup ----
   async function submitSignup() {
     setError("");
     sfx.play("click");
@@ -115,25 +141,20 @@ export default function TitleScreen() {
     if (age < 18) return setError("You must be 18+ to play NaijaLavish.");
     if (username && !/^[a-z0-9_]+$/.test(username)) return setError("Username: letters, numbers, _ only.");
     if (username && username.length < 3) return setError("Username too short (3+).");
+    if (!agreed) return setError("Tick the box to confirm you are 18+ and agree to the house rules.");
 
     setLoading(true);
     try {
-      await signIn();
+      await signIn(); // reuses an existing session (e.g. Google); otherwise creates a guest one
       const token = await getIdToken();
-      if (!token) throw new Error("Auth failed — try again.");
+      if (!token) throw new Error("Could not sign you in. Check your internet and try again.");
 
       const result = await apiFetch("/api/player/init", {
         method: "POST",
-        body: {
-          name: name.trim(),
-          username: username.trim(),
-          lookId,
-          gender,
-          adult: true,
-        },
+        body: { name: name.trim(), username: username.trim(), lookId, gender, adult: true },
         idToken: token,
       });
-      if (!result.ok || !result.data?.ok) {
+      if (!result.ok || !result.data?.player) {
         throw new Error(result.error || "Sign-up failed.");
       }
 
@@ -355,8 +376,8 @@ export default function TitleScreen() {
               <label className="flex items-start gap-2 mb-4 cursor-pointer text-sm">
                 <input
                   type="checkbox"
-                  checked={true}
-                  readOnly
+                  checked={agreed}
+                  onChange={(e) => setAgreed(e.target.checked)}
                   className="mt-1 accent-primary"
                 />
                 <span>
