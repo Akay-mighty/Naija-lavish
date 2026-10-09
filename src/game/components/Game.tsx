@@ -74,7 +74,11 @@ export default function Game() {
     const done = () => { if (alive) setModelsReady(true); };
     const timer = window.setTimeout(done, 10000);
     void import("../three/models")
-      .then((m) => Promise.all([m.preloadCharacters().catch(() => {}), m.preloadCar().catch(() => {})]))
+      .then((m) => Promise.all([
+        m.preloadCharacters().catch(() => {}),
+        m.preloadCar().catch(() => {}),
+        m.preloadProps().catch(() => {}),
+      ]))
       .catch(() => {})
       .finally(() => { window.clearTimeout(timer); done(); });
     return () => { alive = false; window.clearTimeout(timer); };
