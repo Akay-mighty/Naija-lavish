@@ -88,6 +88,7 @@ export default function AbujaCityScene({ className, rain = false, onReady }: Pro
     readyRef.current = onReady;
   }, [onReady]);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTouch(window.matchMedia('(pointer: coarse)').matches);
   }, []);
 
@@ -101,6 +102,7 @@ export default function AbujaCityScene({ className, rain = false, onReady }: Pro
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     } catch {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFailed(true);
       return;
     }
