@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../store/useAuth";
 import { usePlayer, activeLook } from "../store/usePlayer";
@@ -10,6 +10,7 @@ import { naira, shortNaira } from "../lib/format";
 import { toast } from "../store/useToasts";
 import { sfx } from "../lib/sound";
 import { apiFetch } from "../lib/apiFetch";
+import { listenToChat, sendChatMessage, type ChatDoc } from "@/lib/firestore";
 
 type App = "gist" | "bank" | "wallet" | "photos" | "contacts" | "settings" | "shop";
 
@@ -145,10 +146,92 @@ function PhoneApp({ app }: { app: App }) {
 }
 
 function GistApp() {
+  const uid = useAuth((s) => s.uid);
+  const idToken = useAuth((s) => s.idToken);
+  const placeId = usePlayer((s) => s.placeId);
+  const [messages, setMessages] = useState<ChatDoc[]>([]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const logRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const unsub = listenToChat((msgs) => {
+      setMessages(msgs);
+      setConnected(true);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [messages]);
+
+  async function send() {
+    if (!idToken || !input.trim() || sending) return;
+    setSending(true);
+    setInput("");
+    const res = await sendChatMessage(idToken, input, placeId);
+    if (!res.ok) toast(res.error || "Failed to send.", "warn");
+    setSending(false);
+  }
+
   return (
     <div>
       <h3 className="font-semibold text-white mb-2">Gist</h3>
-      <p className="text-[11px] text-white/50">Live chat appears here. Close the phone and use the chat box at the bottom of the screen.</p>
+      {connected && (
+        <div className="text-[10px] text-white/40 mb-2 flex items-center gap-1">
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
+          Live · {messages.length} messages
+        </div>
+      )}
+      <div
+        ref={logRef}
+        className="rounded-xl bg-white/5 p-2 mb-2 overflow-y-auto no-scrollbar"
+        style={{ maxHeight: 200, minHeight: 100 }}
+      >
+        {messages.length === 0 ? (
+          <p className="text-[11px] text-white/40 text-center py-4">
+            No gist yet. Be the first to say something!
+          </p>
+        ) : (
+          <ol className="flex flex-col gap-1">
+            {messages.slice(-30).map((m) => (
+              <li key={m.id} className={`flex ${m.uid === uid ? "justify-end" : ""}`}>
+                <div
+                  className={`text-[11px] rounded-lg px-2 py-1 max-w-[80%] ${
+                    m.uid === uid ? "bg-emerald-500 text-white" : "bg-white/10 text-white"
+                  }`}
+                >
+                  {m.uid !== uid && <span className="font-semibold mr-1">{m.name}:</span>}
+                  {m.text}
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+      <form
+        onSubmit={(e) => { e.preventDefault(); send(); }}
+        className="flex items-center gap-1.5"
+      >
+        <input
+          type="text"
+          maxLength={200}
+          placeholder="Say something..."
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          disabled={!idToken || sending}
+          className="flex-1 bg-white/5 text-white text-xs px-2 py-1.5 rounded-lg outline-none"
+        />
+        <button
+          type="submit"
+          disabled={!idToken || sending || !input.trim()}
+          className="px-2.5 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-medium disabled:opacity-50"
+        >
+          ↑
+        </button>
+      </form>
     </div>
   );
 }
