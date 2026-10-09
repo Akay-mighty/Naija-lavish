@@ -1,0 +1,43 @@
+// NaijaLavish — Firestore Security Rules
+// Paste these into Firebase Console → Firestore → Rules
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Players: anyone can read, only owner can update limited fields
+    // Admin SDK (server routes) bypasses ALL rules — no rule needed for admin writes
+    match /players/{uid} {
+      allow read: if true;
+      allow create: if false;  // only /api/player/init creates (uses Admin SDK)
+      allow update: if request.auth.uid == uid &&
+        request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly(['name', 'username', 'lookId', 'gender', 'placeId', 'lastSeen', 'inventory']);
+    }
+
+    // Chat: client read-only, writes via /api/chat only (Admin SDK)
+    match /chat/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Admin docs: only owner can read their own admin doc
+    match /admins/{uid} {
+      allow read: if request.auth.uid == uid;
+      allow write: if false;  // create via Firebase Console only
+    }
+
+    // Admin action log: admin-only (but Admin SDK bypasses rules anyway)
+    match /adminActions/{id} {
+      allow read: if false;
+      allow write: if false;
+    }
+
+    // Events (sprays etc.): client read, server write
+    match /events/{placeId}/{type}/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}
