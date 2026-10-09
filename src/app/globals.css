@@ -214,10 +214,12 @@
 .phone-shell {
   position: fixed; left: 50%; bottom: 0; transform: translateX(-50%);
   width: min(420px, 100vw);
+  max-height: 88vh;
+  overflow-y: auto;
   background: oklch(0.13 0.012 145);
   color: oklch(0.98 0 0);
   border-radius: 36px 36px 0 0;
-  padding: 14px 14px 22px;
+  padding: 14px 14px calc(22px + env(safe-area-inset-bottom, 0px));
   box-shadow: var(--shadow-lift);
   z-index: 35;
   animation: sheet-up .26s cubic-bezier(.22,1,.36,1);
@@ -234,15 +236,15 @@
 @keyframes sticker-pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
 /* Toasts */
-#toasts { position: fixed; left: 12px; right: 12px; bottom: 110px; z-index: 60; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+#toasts { position: fixed; left: 12px; right: 12px; top: 12px; z-index: 60; display: flex; flex-direction: column; gap: 6px; pointer-events: none; max-width: 320px; }
 .toast {
   background: var(--card);
   color: var(--foreground);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 10px 14px;
-  box-shadow: var(--shadow-lift);
-  font-size: 14px;
+  border-radius: 12px;
+  padding: 8px 12px;
+  box-shadow: var(--shadow-soft);
+  font-size: 12px;
   display: flex; align-items: center; gap: 10px;
   animation: toast-in .28s cubic-bezier(.22,1,.36,1);
 }

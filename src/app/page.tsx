@@ -66,6 +66,7 @@ function AppContent() {
       if (route.screen === "game") go({ screen: "landing", sheet: null }, "replace");
       usePlayer.setState({ screen: route.screen === "title" ? "title" : "landing" });
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setBooted(true);
   }, [isAdmin, hydrate, authReady]);
 
