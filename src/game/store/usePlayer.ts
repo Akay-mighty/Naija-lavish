@@ -161,6 +161,7 @@ export const usePlayer = create<PlayerStore>()(
           dailyLastClaim: (p as any).dailyLastClaim,
           housePos: (p as any).housePos || [14, 8],
           houseCity: (p as any).houseCity || "abuja",
+          inventory: (p as any).inventory || [],
         }),
 
       setLocalName: (n) => set({ name: n }),
