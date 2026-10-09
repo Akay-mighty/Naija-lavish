@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { PLACES } from "../data/places";
+import { PLACES, KADUNA_PLACES, CITIES, getPlacesByCity, type CityId } from "../data/places";
 import { usePlayer } from "../store/usePlayer";
+import { sfx } from "../lib/sound";
 
 interface MapSheetProps {
   open: boolean;
@@ -12,6 +14,8 @@ interface MapSheetProps {
 
 export default function MapSheet({ open, onClose, onPick }: MapSheetProps) {
   const placeId = usePlayer((s) => s.placeId);
+  const [city, setCity] = useState<CityId>("abuja");
+  const places = getPlacesByCity(city);
 
   return (
     <AnimatePresence>
@@ -37,7 +41,7 @@ export default function MapSheet({ open, onClose, onPick }: MapSheetProps) {
           >
             <header className="flex items-center justify-between px-5 pt-4 pb-2">
               <div>
-                <h2 className="text-lg font-bold">Abuja Map</h2>
+                <h2 className="text-lg font-bold">{city === "abuja" ? "Abuja" : "Kaduna"} Map</h2>
                 <p className="text-xs text-foreground/50">
                   Tap a place to walk there
                 </p>
@@ -52,9 +56,26 @@ export default function MapSheet({ open, onClose, onPick }: MapSheetProps) {
               </button>
             </header>
 
+            {/* City switcher */}
+            <div className="flex gap-1 px-5 pb-2">
+              {CITIES.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => { sfx.play("click"); setCity(c.id); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                    city === c.id
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary text-foreground/60"
+                  }`}
+                >
+                  {c.emoji} {c.name}
+                </button>
+              ))}
+            </div>
+
             <div className="overflow-y-auto soft-scroll px-5 pb-6 pt-2">
               <ul className="grid grid-cols-1 gap-2">
-                {PLACES.map((p) => {
+                {places.map((p) => {
                   const isActive = p.id === placeId;
                   return (
                     <li key={p.id}>

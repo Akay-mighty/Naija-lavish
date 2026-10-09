@@ -34,18 +34,6 @@ export default function Phone({ onClose }: { onClose: () => void }) {
   return (
     <motion.div
       className="phone-shell"
-      // framer-motion writes its own inline `transform`, which wiped out the CSS
-      // `translateX(-50%)` and pushed the phone half off-screen. So we centre it
-      // with left/right + auto margins (no transform) and let it scroll if tall.
-      style={{
-        left: 0,
-        right: 0,
-        marginLeft: "auto",
-        marginRight: "auto",
-        maxHeight: "85dvh",
-        overflowY: "auto",
-        paddingBottom: "calc(22px + env(safe-area-inset-bottom))",
-      }}
       initial={{ y: "100%" }}
       animate={{ y: 0 }}
       exit={{ y: "100%" }}
@@ -133,7 +121,7 @@ function PhoneApp({ app }: { app: App }) {
 function GistApp() {
   const chat = usePlayer((s) => s.chat);
   return (
-    <div>
+    <div className="overflow-y-auto no-scrollbar">
       <h3 className="font-semibold text-white mb-2">Gist</h3>
       <ul className="flex flex-col gap-1.5">
         {chat.slice(-30).map((m) => (
@@ -453,11 +441,43 @@ function PhotosApp() {
 }
 
 function ContactsApp() {
+  const uid = useAuth((s) => s.uid);
+  const name = usePlayer((s) => s.name);
+
+  async function inviteToHouse() {
+    sfx.play("click");
+    const url = `${window.location.origin}/?house=${uid}`;
+    const shareData = {
+      title: "NaijaLavish — come to my house!",
+      text: `Hey! I'm ${name}. Come hang out at my house in NaijaLavish 🏠`,
+      url,
+    };
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+      } else {
+        await navigator.clipboard.writeText(url);
+        toast("Link copied! Share am with your guys.", "success", "📋");
+      }
+    } catch {
+      // user cancelled share
+    }
+  }
+
   return (
     <div>
       <h3 className="font-semibold text-white mb-2">Contacts</h3>
+
+      {/* Invite to house */}
+      <button
+        onClick={inviteToHouse}
+        className="w-full mb-3 p-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-sm font-medium flex items-center gap-2"
+      >
+        🏠 Invite friends to my house
+      </button>
+
       <div className="text-[11px] text-white/50 mb-3">
-        People you've met in Abuja
+        People you've met
       </div>
       <ul className="flex flex-col gap-1">
         {NPCS.slice(0, 12).map((n) => (

@@ -140,11 +140,19 @@ export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
     trafficRef.current = buildAmbientTraffic(scene);
 
     // ---- Places (unique silhouettes) ----
+    // Override "home" position with the player's unique housePos
+    const playerHousePos = usePlayer.getState().housePos || [14, 8];
+
     PLACES.forEach((p) => {
-      const g = buildPlace(p);
+      const placeData = { ...p };
+      // Use player's unique house position for the "home" marker
+      if (p.id === "home") {
+        placeData.pos = playerHousePos as [number, number];
+      }
+      const g = buildPlace(placeData);
       scene.add(g);
       markersRef.current[p.id] = g;
-      placePosRef.current[p.id] = new THREE.Vector3(p.pos[0], 0, p.pos[1]);
+      placePosRef.current[p.id] = new THREE.Vector3(placeData.pos[0], 0, placeData.pos[1]);
     });
 
     // ---- Local character (avatar factory) ----
