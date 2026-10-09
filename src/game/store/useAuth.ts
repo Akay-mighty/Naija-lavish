@@ -185,8 +185,12 @@ export const useAuth = create<AuthState>((set, get) => ({
       const token = await cred.user.getIdToken();
       const adminDoc = await getDoc(doc(db, "admins", cred.user.uid));
       if (!adminDoc.exists()) {
+        const badUid = cred.user.uid;
         await fbSignOut(auth);
-        return { ok: false, error: "Not an admin account." };
+        return {
+          ok: false,
+          error: `Not an admin account. The game looked for Firestore document admins/${badUid} and did not find it. Create exactly that document ID (copy it from here), with field admin = true (boolean).`,
+        };
       }
       set({
         status: "admin",
