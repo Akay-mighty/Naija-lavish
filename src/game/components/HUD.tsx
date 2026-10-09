@@ -8,6 +8,8 @@ import { PLACE_BY_ID } from "../data/places";
 import { QUEST_STEPS } from "../data/quests";
 import { sfx } from "../lib/sound";
 import { apiFetch } from "../lib/apiFetch";
+import { rtdb } from "@/lib/firebase";
+import { ref as dbRef, onValue as dbOnValue } from "firebase/database";
 
 // Map need value (0-100) to a face emoji + word
 function moodFor(vibe: number, hunger: number, energy: number): { face: string; word: string } {
@@ -66,9 +68,33 @@ export default function HUD() {
   const mood = moodFor(vibe, hunger, energy);
   const isNight = gameHour < 6 || gameHour >= 19;
 
+  // Community goal: how many players sprayed today
+  const [sprayCount, setSprayCount] = useState(0);
+  const SPRAY_GOAL = 100;
+  useEffect(() => {
+    const unsub = dbOnValue(dbRef(rtdb, "community/spraysToday"), (snap) => {
+      setSprayCount(snap.val() || 0);
+    });
+    return () => unsub();
+  }, []);
+
   // Determine current quest step (first uncompleted)
   const completedSet = new Set(quest?.completed || []);
   const currentStep = QUEST_STEPS.find((s) => !completedSet.has(s.id));
+
+  // ---- Dance emote ----
+  const [dancing, setDancing] = useState(false);
+  async function handleDance() {
+    if (dancing) return;
+    sfx.play("click");
+    setDancing(true);
+    // Dispatch event for Scene3D to update presence anim to "dance"
+    window.dispatchEvent(new CustomEvent("naijalavish:dance"));
+    setTimeout(() => {
+      setDancing(false);
+      window.dispatchEvent(new CustomEvent("naijalavish:stop-dance"));
+    }, 5000);
+  }
 
   function handleToggleSound() {
     sfx.play("click");
@@ -219,6 +245,59 @@ export default function HUD() {
           <div className="text-[10px] text-white/60 mt-1">Tap when done → claim reward</div>
         </button>
       )}
+
+      {/* Community goal bar */}
+      {sprayCount > 0 && sprayCount < SPRAY_GOAL && (
+        <div
+          className="px-3 py-2.5 mb-2"
+          style={{
+            borderRadius: 12,
+            background: "rgba(15, 28, 22, 0.72)",
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
+          }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs">🎉</span>
+            <span className="text-[10px] text-white/70">Community goal</span>
+            <span className="text-[10px] text-white/50 ml-auto">{sprayCount}/{SPRAY_GOAL} sprays</span>
+          </div>
+          <div style={{ height: 6, borderRadius: 999, background: "rgba(255,255,255,0.15)", overflow: "hidden" }}>
+            <div
+              style={{
+                width: `${Math.min(100, (sprayCount / SPRAY_GOAL) * 100)}%`,
+                height: "100%",
+                background: "linear-gradient(90deg, #fbbf24, #f59e0b)",
+                borderRadius: 999,
+                transition: "width .5s ease",
+              }}
+            />
+          </div>
+          <p className="text-[9px] text-white/40 mt-1">Everyone gets ₦1,000 when we hit {SPRAY_GOAL}</p>
+        </div>
+      )}
+
+      {/* Dance emote button (floating, right side) */}
+      <button
+        onClick={handleDance}
+        className="fixed right-3 z-20 flex items-center justify-center w-12 h-12 transition"
+        style={{
+          borderRadius: 999,
+          bottom: "calc(80px + env(safe-area-inset-bottom, 0px))",
+          background: dancing
+            ? "linear-gradient(135deg, #a855f7, #ec4899)"
+            : "rgba(15, 28, 22, 0.72)",
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
+          boxShadow: dancing ? "0 0 16px rgba(168, 85, 247, 0.6)" : "none",
+          border: "none",
+          cursor: "pointer",
+          fontSize: 20,
+        }}
+        aria-label="Dance"
+      >
+        💃
+      </button>
     </div>
   );
 }

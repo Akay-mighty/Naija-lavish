@@ -55,6 +55,8 @@ export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
   const interiorModeRef = useRef<"home" | "owambe" | null>(null);
   // Spray effect (naira notes raining down)
   const sprayEffectRef = useRef<SprayEffect | null>(null);
+  // Dance emote flag (toggles local avatar to "dance" animation)
+  const dancingRef = useRef(false);
   const setMoveChar = useRef(usePlayer.getState().moveCharacter).current;
   const setPlaceRef = useRef(usePlayer.getState().setPlace).current;
   const lastPlaceSentRef = useRef<string | null>(null);
@@ -324,7 +326,8 @@ export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
           }
         }
       } else if (avatarPartsRef.current) {
-        animateAvatar(avatarPartsRef.current, t, false, "idle");
+        const anim = dancingRef.current ? "dance" : "idle";
+        animateAvatar(avatarPartsRef.current, t, false, anim);
       }
 
       // Camera follow
@@ -507,6 +510,34 @@ export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
         if (Array.isArray(m)) m.forEach((mm) => mm.dispose());
         else if (m) (m as THREE.Material).dispose();
       });
+    };
+  }, []);
+
+  // ---- Dance emote: update RTDB presence anim field ----
+  useEffect(() => {
+    const onDance = () => {
+      const a = useAuth.getState();
+      if (a.uid) {
+        void dbWrite(dbRef(rtdb, `presence/${a.uid}/anim`), "dance");
+      }
+      // Animate local avatar
+      if (avatarPartsRef.current) {
+        // Will be picked up by the animation loop via a ref flag
+        dancingRef.current = true;
+      }
+    };
+    const onStopDance = () => {
+      const a = useAuth.getState();
+      if (a.uid) {
+        void dbWrite(dbRef(rtdb, `presence/${a.uid}/anim`), "idle");
+      }
+      dancingRef.current = false;
+    };
+    window.addEventListener("naijalavish:dance", onDance);
+    window.addEventListener("naijalavish:stop-dance", onStopDance);
+    return () => {
+      window.removeEventListener("naijalavish:dance", onDance);
+      window.removeEventListener("naijalavish:stop-dance", onStopDance);
     };
   }, []);
 
