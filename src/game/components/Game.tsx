@@ -64,12 +64,20 @@ export default function Game() {
   const setPlace = usePlayer((s) => s.setPlace);
   const advanceHour = usePlayer((s) => s.advanceHour);
 
-  // Preload 3D character models (male + female GLB) on game mount
+  // Load the 3D character models (male + female GLB) BEFORE the city starts.
+  // The city builds every player the moment it starts; if the models were still downloading,
+  // everyone was built as the plain fallback figure and never swapped. We wait (max 10s) so the
+  // real characters are ready, and fall back to the simple figures only if the download fails.
+  const [modelsReady, setModelsReady] = useState(false);
   useEffect(() => {
-    void import("../three/models").then((m) => {
-      m.preloadCharacters().catch(() => {});
-      m.preloadCar().catch(() => {});
-    });
+    let alive = true;
+    const done = () => { if (alive) setModelsReady(true); };
+    const timer = window.setTimeout(done, 10000);
+    void import("../three/models")
+      .then((m) => Promise.all([m.preloadCharacters().catch(() => {}), m.preloadCar().catch(() => {})]))
+      .catch(() => {})
+      .finally(() => { window.clearTimeout(timer); done(); });
+    return () => { alive = false; window.clearTimeout(timer); };
   }, []);
 
   // The open sheet lives in the URL (#game/map ...) so the phone's Back button closes it
@@ -281,7 +289,16 @@ export default function Game() {
       className="relative w-full overflow-hidden"
       style={{ height: "100dvh", background: "#eef7f1" }}
     >
-      <Scene3D targetPlaceId={targetPlaceId} interior={interior} />
+      {modelsReady ? (
+        <Scene3D targetPlaceId={targetPlaceId} interior={interior} />
+      ) : (
+        <div className="absolute inset-0 grid place-items-center bg-background">
+          <div className="flex flex-col items-center gap-3">
+            <div className="dot" style={{ width: 12, height: 12 }} />
+            <p className="text-sm text-foreground/50">Getting your character ready…</p>
+          </div>
+        </div>
+      )}
 
       {/* Top right: real online count only */}
       <div className="absolute top-3 right-3 z-20 flex flex-col items-end gap-2">
