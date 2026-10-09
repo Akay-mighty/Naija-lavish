@@ -26,6 +26,8 @@ export default function AdminDashboard() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
   const [loggingIn, setLoggingIn] = useState(false);
 
   const [tab, setTab] = useState<Tab>("overview");
@@ -98,7 +100,11 @@ export default function AdminDashboard() {
 
   // ---- Admin actions (call server routes via apiFetch — handles HTML errors) ----
   async function adminAction(player: PlayerWithId, action: string, field?: string, amount?: number) {
-    if (!idToken) return;
+    if (!idToken) {
+      setError("Not signed in. Please log in again.");
+      return;
+    }
+    setError("");
     const r = await apiFetch(`/api/admin/player/${player.id}`, {
       method: "POST",
       body: { action, field, amount },
@@ -106,6 +112,14 @@ export default function AdminDashboard() {
     });
     if (!r.ok || !r.data?.ok) {
       setError(r.error || "Action failed.");
+    } else {
+      // Success — show feedback + refresh player list
+      const note = r.data?.result?.note || action;
+      setSuccessMsg(`${note} — ${player.name}`);
+      // Force refresh by toggling a state
+      setRefreshKey((k) => k + 1);
+      // Clear success after 3s
+      setTimeout(() => setSuccessMsg(""), 3000);
     }
   }
 
@@ -408,9 +422,20 @@ export default function AdminDashboard() {
                 exit={{ opacity: 0, y: -8 }}
               >
                 <h2 className="text-xl font-bold text-slate-900 mb-1">Players</h2>
-                <p className="text-sm text-slate-500 mb-4">
+                <p className="text-sm text-slate-500 mb-2">
                   Click a player to credit/debit money, set needs, or ban.
                 </p>
+
+                {error && (
+                  <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg mb-3">
+                    ⚠ {error}
+                  </div>
+                )}
+                {successMsg && (
+                  <div className="text-sm text-emerald-700 bg-emerald-50 px-3 py-2 rounded-lg mb-3">
+                    ✅ {successMsg}
+                  </div>
+                )}
 
                 <input
                   type="text"
