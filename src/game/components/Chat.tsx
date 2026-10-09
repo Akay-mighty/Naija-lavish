@@ -90,25 +90,23 @@ export default function Chat() {
         </div>
       )}
 
-      {/* Chat log */}
+      {/* Chat log — compact, never covers the screen */}
       <div
         ref={logRef}
-        className="panel no-scrollbar pointer-events-auto mb-2 max-h-44 overflow-y-auto px-3 py-2"
-        style={{ borderRadius: 14 }}
+        className="panel no-scrollbar pointer-events-auto mb-2 overflow-y-auto px-3 py-2"
+        style={{ borderRadius: 14, maxHeight: isEmpty ? 56 : 132 }}
         aria-live="polite"
       >
         {isEmpty ? (
-          // EMPTY STATE — no fake messages
-          <div className="flex flex-col items-center gap-3 py-4 text-center">
-            <div className="text-3xl opacity-60">💬</div>
-            <p className="text-xs text-foreground/60 max-w-[260px]">
-              No gist yet, you be the first. Share the link and bring your guys.
-            </p>
+          // COMPACT empty state — single line, no big box
+          <div className="flex items-center gap-2 text-xs">
+            <span className="opacity-50">💬</span>
+            <span className="text-foreground/50 flex-1 truncate">No gist yet. Share the link →</span>
             <button
               onClick={shareLink}
-              className="px-3 py-1.5 rounded-full bg-primary text-primary-foreground text-xs font-medium"
+              className="px-2 py-1 rounded-full bg-primary text-primary-foreground text-[10px] font-medium flex-none"
             >
-              📤 Share link
+              Share
             </button>
           </div>
         ) : (

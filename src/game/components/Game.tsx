@@ -137,7 +137,7 @@ export default function Game() {
   useEffect(() => {
     if (!name) return;
     const t = setTimeout(() => {
-      toast(`Welcome to NaijaLavish, ${name}! Tap a place on the map to walk there.`, "success", "🎉");
+      toast(`Welcome, ${name}!`, "success", "🎉");
     }, 600);
     return () => clearTimeout(t);
   }, [name]);
@@ -167,7 +167,7 @@ export default function Game() {
     }
   }, [soloMode]);
 
-  // Character arrival → open place sheet
+  // Character arrival → open place sheet (NO toast — the place card in HUD already shows it)
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { placeId: string };
@@ -175,8 +175,6 @@ export default function Game() {
       setPlace(detail.placeId);
       setTargetPlaceId(null);
       setSheet("place");
-      const p = PLACE_BY_ID[detail.placeId];
-      if (p) toast(`Arrived at ${p.name}.`, "info", "📍");
       sfx.play("arrive");
     };
     window.addEventListener("naijalavish:arrive", handler as EventListener);
