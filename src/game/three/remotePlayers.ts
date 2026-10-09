@@ -24,6 +24,7 @@ interface RemotePlayer {
   cz: number;
   cry: number;
   lookId: string;
+  anim: string;
   lastUpdate: number;
 }
 
@@ -68,10 +69,11 @@ export class RemotePlayers {
         seen.add(entry.uid);
         const existing = this.players.get(entry.uid);
         if (existing) {
-          // Update target position + look
+          // Update target position + look + anim
           existing.tx = entry.x || 0;
           existing.tz = entry.z || 0;
           existing.try = entry.ry || 0;
+          (existing as any).anim = (entry as any).anim || "idle";
           existing.lastUpdate = Date.now();
           if (entry.lookId && entry.lookId !== existing.lookId) {
             const look = LOOK_BY_ID[entry.lookId];
@@ -100,6 +102,7 @@ export class RemotePlayers {
             cx: entry.x || 0,
             cz: entry.z || 0,
             cry: entry.ry || 0,
+            anim: (entry as any).anim || "idle",
             lookId: entry.lookId || "man-1",
             lastUpdate: Date.now(),
           });
@@ -156,7 +159,9 @@ export class RemotePlayers {
       // Walking detection (if target > 0.5 away from current)
       const dist = Math.hypot(rp.tx - rp.cx, rp.tz - rp.cz);
       const walking = dist > 0.05;
-      animateAvatar(rp.parts, t, walking, "idle");
+      // Use "dance" anim if presence says so, otherwise walk/idle
+      const anim = (rp as any).anim === "dance" ? "dance" : "idle";
+      animateAvatar(rp.parts, t, walking, anim);
 
       // Hide bubble after 5s
       if (rp.bubble && now > rp.bubbleUntil) {
