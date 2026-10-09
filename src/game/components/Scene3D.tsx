@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { PLACES } from "../data/places";
+import { PLACES, KADUNA_PLACES, ALL_PLACES } from "../data/places";
 import { hexToInt } from "../lib/format";
 import { usePlayer, activeLook } from "../store/usePlayer";
 import { useAuth } from "../store/useAuth";
@@ -143,7 +143,8 @@ export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
     // Override "home" position with the player's unique housePos
     const playerHousePos = usePlayer.getState().housePos || [14, 8];
 
-    PLACES.forEach((p) => {
+    // Load ALL places (Abuja + Kaduna)
+    ALL_PLACES.forEach((p) => {
       const placeData = { ...p };
       // Use player's unique house position for the "home" marker
       if (p.id === "home") {

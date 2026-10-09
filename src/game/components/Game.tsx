@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useAuth } from "../store/useAuth";
 import { usePlayer } from "../store/usePlayer";
-import { PLACE_BY_ID, START_PLACE_ID } from "../data/places";
+import { PLACE_BY_ID_ALL as PLACE_BY_ID, START_PLACE_ID } from "../data/places";
 import { toast } from "../store/useToasts";
 import { sfx } from "../lib/sound";
 import { apiFetch } from "../lib/apiFetch";

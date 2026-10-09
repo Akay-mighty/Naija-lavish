@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../store/useAuth";
 import { usePlayer } from "../store/usePlayer";
-import { PLACE_BY_ID, type PlaceAction } from "../data/places";
+import { PLACE_BY_ID_ALL as PLACE_BY_ID, type PlaceAction } from "../data/places";
 import { ITEMS, ITEM_BY_ID } from "../data/items";
 import { naira } from "../lib/format";
 import { toast } from "../store/useToasts";

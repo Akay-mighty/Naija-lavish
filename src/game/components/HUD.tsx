@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../store/useAuth";
 import { usePlayer } from "../store/usePlayer";
 import { naira, shortNaira, clockFromHour } from "../lib/format";
-import { PLACE_BY_ID } from "../data/places";
+import { PLACE_BY_ID_ALL as PLACE_BY_ID } from "../data/places";
 import { QUEST_STEPS } from "../data/quests";
 import { sfx } from "../lib/sound";
 import { apiFetch } from "../lib/apiFetch";
