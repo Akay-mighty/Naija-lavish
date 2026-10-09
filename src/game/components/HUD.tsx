@@ -11,7 +11,6 @@ import { apiFetch } from "../lib/apiFetch";
 import { rtdb } from "@/lib/firebase";
 import { ref as dbRef, onValue as dbOnValue } from "firebase/database";
 
-// Map need value (0-100) to a face emoji + word
 function moodFor(vibe: number, hunger: number, energy: number): { face: string; word: string } {
   const avg = (vibe + hunger + energy) / 3;
   if (avg >= 75) return { face: "😄", word: "Gingered" };
@@ -19,37 +18,6 @@ function moodFor(vibe: number, hunger: number, energy: number): { face: string; 
   if (avg >= 35) return { face: "😐", word: "Tired" };
   if (avg >= 20) return { face: "😩", word: "Low" };
   return { face: "🥵", word: "Crashing" };
-}
-
-function NeedBar({ label, value, color, emoji }: { label: string; value: number; vibeBoost?: number; color: string; emoji: string }) {
-  // Clamp + ensure width > 0 (fixes the "bars don't render" bug)
-  const pct = Math.max(2, Math.min(100, Math.round(value || 0)));
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs" style={{ width: 16, textAlign: "center" }}>{emoji}</span>
-      <span className="text-[10px] text-white/70" style={{ width: 36 }}>{label}</span>
-      <div
-        style={{
-          flex: 1,
-          height: 6,
-          borderRadius: 999,
-          background: "rgba(255,255,255,0.15)",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            width: `${pct}%`,
-            height: "100%",
-            background: color,
-            borderRadius: 999,
-            transition: "width .35s ease",
-          }}
-        />
-      </div>
-      <span className="text-[10px] text-white/50 tabnum" style={{ width: 24, textAlign: "right" }}>{pct}</span>
-    </div>
-  );
 }
 
 export default function HUD() {
@@ -68,7 +36,7 @@ export default function HUD() {
   const mood = moodFor(vibe, hunger, energy);
   const isNight = gameHour < 6 || gameHour >= 19;
 
-  // Community goal: how many players sprayed today
+  // Community goal
   const [sprayCount, setSprayCount] = useState(0);
   const SPRAY_GOAL = 100;
   useEffect(() => {
@@ -78,17 +46,16 @@ export default function HUD() {
     return () => unsub();
   }, []);
 
-  // Determine current quest step (first uncompleted)
+  // Quest
   const completedSet = new Set(quest?.completed || []);
   const currentStep = QUEST_STEPS.find((s) => !completedSet.has(s.id));
 
-  // ---- Dance emote ----
+  // Dance
   const [dancing, setDancing] = useState(false);
   async function handleDance() {
     if (dancing) return;
     sfx.play("click");
     setDancing(true);
-    // Dispatch event for Scene3D to update presence anim to "dance"
     window.dispatchEvent(new CustomEvent("naijalavish:dance"));
     setTimeout(() => {
       setDancing(false);
@@ -99,10 +66,9 @@ export default function HUD() {
   function handleToggleSound() {
     sfx.play("click");
     toggleSound();
-    sfx.setMuted(soundOn); // soundOn is the OLD value (pre-toggle), so the new state is the opposite
+    sfx.setMuted(soundOn);
   }
 
-  // Claim current quest step (calls /api/player/quest which verifies server-side)
   async function claimQuest() {
     if (!idToken || !currentStep) return;
     sfx.play("click");
@@ -111,193 +77,148 @@ export default function HUD() {
       body: { stepId: currentStep.id },
       idToken,
     });
-    if (r.ok && r.data?.ok) {
-      sfx.play("cashEarn");
-    }
+    if (r.ok && r.data?.ok) sfx.play("cashEarn");
   }
 
+  // Show needs panel on tap
+  const [showNeeds, setShowNeeds] = useState(false);
+
   return (
-    <div
-      className="absolute top-3 left-3 z-20 select-none"
-      style={{ maxWidth: 340 }}
-    >
-      {/* Top row: cash + clock + sound — dark frosted glass pills */}
-      <div className="flex items-center gap-2 mb-2">
-        <div
-          className="flex items-center gap-2 px-3 py-2"
-          style={{
-            borderRadius: 12,
-            background: "rgba(15, 28, 22, 0.72)",
-            backdropFilter: "blur(8px)",
-            WebkitBackdropFilter: "blur(8px)",
-          }}
-          aria-label={`Cash: ${naira(cash)}`}
+    <>
+      {/* === SINGLE CLEAN TOP PILL (like LagosLife) === */}
+      <div
+        className="fixed top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-2"
+        style={{
+          background: "white",
+          borderRadius: 999,
+          boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+          border: "1px solid rgba(0,0,0,0.06)",
+          maxWidth: "calc(100vw - 16px)",
+        }}
+      >
+        {/* Time + mood */}
+        <button
+          onClick={() => setShowNeeds(!showNeeds)}
+          className="flex items-center gap-1.5 flex-none"
         >
-          <span style={{ color: "#fbbf24", fontWeight: 700 }}>₦</span>
-          <b className="tabnum text-white" style={{ fontSize: 17 }}>
+          <span style={{ fontSize: 13 }}>{isNight ? "🌙" : "☀️"}</span>
+          <b className="text-xs tabnum">{clockFromHour(gameHour)}</b>
+          <span style={{ fontSize: 13 }}>{mood.face}</span>
+        </button>
+
+        {/* Divider */}
+        <div style={{ width: 1, height: 16, background: "rgba(0,0,0,0.08)" }} />
+
+        {/* Cash */}
+        <div className="flex items-center gap-1 flex-1 min-w-0">
+          <span style={{ color: "#00875a", fontWeight: 700, fontSize: 13 }}>₦</span>
+          <b className="text-sm tabnum truncate" style={{ maxWidth: 120 }}>
             {naira(cash).replace("₦", "").trim()}
           </b>
         </div>
 
-        {/* Clock */}
-        <div
-          className="flex items-center gap-1.5 px-2.5 py-2"
-          style={{
-            borderRadius: 12,
-            background: "rgba(15, 28, 22, 0.72)",
-            backdropFilter: "blur(8px)",
-            WebkitBackdropFilter: "blur(8px)",
-          }}
-          aria-label={`Game time: ${clockFromHour(gameHour)}`}
-        >
-          <span style={{ fontSize: 14 }}>{isNight ? "🌙" : "☀️"}</span>
-          <b className="tabnum text-xs text-white">{clockFromHour(gameHour)}</b>
-        </div>
+        {/* Divider */}
+        <div style={{ width: 1, height: 16, background: "rgba(0,0,0,0.08)" }} />
 
-        {/* Sound toggle */}
-        <button
-          className="flex items-center justify-center w-9 h-9"
-          style={{
-            borderRadius: 12,
-            background: "rgba(15, 28, 22, 0.72)",
-            backdropFilter: "blur(8px)",
-            WebkitBackdropFilter: "blur(8px)",
-          }}
-          onClick={handleToggleSound}
-          aria-label={soundOn ? "Mute sound" : "Unmute sound"}
-          aria-pressed={!soundOn}
-        >
+        {/* Sound */}
+        <button onClick={handleToggleSound} className="flex-none" aria-label="Sound">
           {soundOn ? "🔊" : "🔇"}
+        </button>
+
+        {/* Dance */}
+        <button
+          onClick={handleDance}
+          className="flex-none"
+          style={{
+            fontSize: 14,
+            filter: dancing ? "drop-shadow(0 0 4px #a855f7)" : "none",
+          }}
+          aria-label="Dance"
+        >
+          💃
         </button>
       </div>
 
-      {/* Needs + mood — dark frosted glass panel */}
-      <div
-        className="px-3 py-2.5 mb-2"
-        style={{
-          borderRadius: 12,
-          background: "rgba(15, 28, 22, 0.72)",
-          backdropFilter: "blur(8px)",
-          WebkitBackdropFilter: "blur(8px)",
-        }}
-      >
-        <div className="flex flex-col gap-1.5">
-          <NeedBar label="Belle"  value={hunger} color="#f59e0b" emoji="🍽️" />
-          <NeedBar label="Energy" value={energy} color="#22c55e" emoji="⚡" />
-          <NeedBar label="Vibe"   value={vibe}   color="#a855f7" emoji="✨" />
-        </div>
-        <div className="flex items-center gap-2 mt-2 pt-2" style={{ borderTop: "1px solid rgba(255,255,255,0.12)" }}>
-          <span style={{ fontSize: 16 }}>{mood.face}</span>
-          <small className="text-white/60">{mood.word}</small>
-        </div>
-      </div>
-
-      {/* Place card — FIX: shows area, never "—" */}
-      {place && (
+      {/* === NEEDS DROPDOWN (taps the time/mood area) === */}
+      {showNeeds && (
         <div
-          className="px-3 py-2.5 mb-2"
+          className="fixed top-12 left-1/2 -translate-x-1/2 z-20 px-3 py-2"
           style={{
+            background: "white",
             borderRadius: 12,
-            background: "rgba(15, 28, 22, 0.72)",
-            backdropFilter: "blur(8px)",
-            WebkitBackdropFilter: "blur(8px)",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
+            border: "1px solid rgba(0,0,0,0.06)",
+            minWidth: 200,
           }}
         >
-          <div className="flex items-center gap-2">
-            <span
-              className="inline-block w-2.5 h-2.5 rounded-full"
-              style={{ background: place.color }}
-            />
-            <b className="text-sm text-white">{place.name}</b>
+          <div className="flex flex-col gap-1.5">
+            <NeedRow emoji="🍽️" label="Belle" value={hunger} color="#f59e0b" />
+            <NeedRow emoji="⚡" label="Energy" value={energy} color="#22c55e" />
+            <NeedRow emoji="✨" label="Vibe" value={vibe} color="#a855f7" />
           </div>
-          <div className="text-[11px] text-white/50 mt-0.5">
-            {place.area && place.area !== "—" ? `${place.area}, ` : ""}Abuja
+          <div className="flex items-center gap-1.5 mt-1.5 pt-1.5" style={{ borderTop: "1px solid rgba(0,0,0,0.06)" }}>
+            <span style={{ fontSize: 12 }}>{mood.face}</span>
+            <span className="text-[10px] text-gray-500">{mood.word}</span>
           </div>
-          <p className="text-[11px] text-white/70 mt-1 leading-snug italic">
-            {place.ambience}
-          </p>
         </div>
       )}
 
-      {/* Quest card — shows current step */}
+      {/* === PLACE NAME (small, bottom-left above chat) === */}
+      {place && (
+        <div
+          className="fixed left-2 z-20 flex items-center gap-1.5 px-2.5 py-1"
+          style={{
+            bottom: "calc(76px + env(safe-area-inset-bottom, 0px))",
+            background: "white",
+            borderRadius: 999,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+            border: "1px solid rgba(0,0,0,0.06)",
+          }}
+        >
+          <span
+            className="inline-block w-2 h-2 rounded-full"
+            style={{ background: place.color }}
+          />
+          <span className="text-[11px] font-semibold truncate" style={{ maxWidth: 100 }}>
+            {place.name}
+          </span>
+        </div>
+      )}
+
+      {/* === QUEST CARD (small, right side) === */}
       {currentStep && (
         <button
           onClick={claimQuest}
-          className="block w-full text-left px-3 py-2.5 mb-2 transition hover:brightness-110"
+          className="fixed right-2 z-20 px-2.5 py-1.5 transition"
           style={{
-            borderRadius: 12,
-            background: "linear-gradient(135deg, #00875a 0%, #00b86b 100%)",
-            boxShadow: "0 4px 12px rgba(0, 135, 90, 0.3)",
+            bottom: "calc(76px + env(safe-area-inset-bottom, 0px))",
+            background: "linear-gradient(135deg, #00875a, #00b86b)",
+            borderRadius: 999,
+            boxShadow: "0 2px 8px rgba(0,135,90,0.2)",
+            maxWidth: 160,
           }}
-          aria-label={`Quest: ${currentStep.label}. Tap to claim reward.`}
         >
-          <div className="flex items-center gap-2">
-            <span
-              className="text-[9px] font-bold uppercase tracking-wide text-white/80"
-              style={{ background: "rgba(0,0,0,0.25)", padding: "2px 6px", borderRadius: 4 }}
-            >
-              NEXT
-            </span>
-            <b className="text-sm text-white">{currentStep.label}</b>
-            <span className="ml-auto text-[11px] text-white/90 font-semibold">+{shortNaira(currentStep.reward)}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[8px] font-bold uppercase text-white/70 bg-black/20 px-1 py-0.5 rounded">Q</span>
+            <span className="text-[10px] font-medium text-white truncate">{currentStep.label}</span>
+            <span className="text-[9px] text-white/80 font-bold flex-none">+{shortNaira(currentStep.reward)}</span>
           </div>
-          <p className="text-[11px] text-white/80 mt-1 leading-snug">{currentStep.hint}</p>
-          <div className="text-[10px] text-white/60 mt-1">Tap when done → claim reward</div>
         </button>
       )}
+    </>
+  );
+}
 
-      {/* Community goal bar */}
-      {sprayCount > 0 && sprayCount < SPRAY_GOAL && (
-        <div
-          className="px-3 py-2.5 mb-2"
-          style={{
-            borderRadius: 12,
-            background: "rgba(15, 28, 22, 0.72)",
-            backdropFilter: "blur(8px)",
-            WebkitBackdropFilter: "blur(8px)",
-          }}
-        >
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs">🎉</span>
-            <span className="text-[10px] text-white/70">Community goal</span>
-            <span className="text-[10px] text-white/50 ml-auto">{sprayCount}/{SPRAY_GOAL} sprays</span>
-          </div>
-          <div style={{ height: 6, borderRadius: 999, background: "rgba(255,255,255,0.15)", overflow: "hidden" }}>
-            <div
-              style={{
-                width: `${Math.min(100, (sprayCount / SPRAY_GOAL) * 100)}%`,
-                height: "100%",
-                background: "linear-gradient(90deg, #fbbf24, #f59e0b)",
-                borderRadius: 999,
-                transition: "width .5s ease",
-              }}
-            />
-          </div>
-          <p className="text-[9px] text-white/40 mt-1">Everyone gets ₦1,000 when we hit {SPRAY_GOAL}</p>
-        </div>
-      )}
-
-      {/* Dance emote button (floating, right side) */}
-      <button
-        onClick={handleDance}
-        className="fixed right-3 z-20 flex items-center justify-center w-12 h-12 transition"
-        style={{
-          borderRadius: 999,
-          bottom: "calc(80px + env(safe-area-inset-bottom, 0px))",
-          background: dancing
-            ? "linear-gradient(135deg, #a855f7, #ec4899)"
-            : "rgba(15, 28, 22, 0.72)",
-          backdropFilter: "blur(8px)",
-          WebkitBackdropFilter: "blur(8px)",
-          boxShadow: dancing ? "0 0 16px rgba(168, 85, 247, 0.6)" : "none",
-          border: "none",
-          cursor: "pointer",
-          fontSize: 20,
-        }}
-        aria-label="Dance"
-      >
-        💃
-      </button>
+function NeedRow({ emoji, label, value, color }: { emoji: string; label: string; value: number; color: string }) {
+  const pct = Math.max(3, Math.min(100, Math.round(value || 0)));
+  return (
+    <div className="flex items-center gap-2">
+      <span style={{ fontSize: 11, width: 14 }}>{emoji}</span>
+      <span className="text-[10px] text-gray-500" style={{ width: 36 }}>{label}</span>
+      <div style={{ flex: 1, height: 5, borderRadius: 999, background: "rgba(0,0,0,0.06)", overflow: "hidden" }}>
+        <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 999, transition: "width .3s" }} />
+      </div>
+      <span className="text-[9px] text-gray-400 tabnum" style={{ width: 20, textAlign: "right" }}>{pct}</span>
     </div>
   );
 }
