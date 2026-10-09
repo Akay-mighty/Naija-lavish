@@ -52,6 +52,10 @@ export interface PlayerState {
   gameHour: number;
   soundOn: boolean;
 
+  // Per-player house position (unique on the map)
+  housePos?: [number, number];
+  houseCity?: string;
+
   // Quest progress (mirrored from server)
   quest?: { step: number; completed: string[] };
 
@@ -155,6 +159,8 @@ export const usePlayer = create<PlayerStore>()(
           quest: (p as any).quest || { step: 0, completed: [] },
           dailyStreak: (p as any).dailyStreak,
           dailyLastClaim: (p as any).dailyLastClaim,
+          housePos: (p as any).housePos || [14, 8],
+          houseCity: (p as any).houseCity || "abuja",
         }),
 
       setLocalName: (n) => set({ name: n }),
