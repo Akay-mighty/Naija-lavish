@@ -19,6 +19,8 @@ export interface AvatarParts {
   isGLB: boolean;
   /** GLB only: the model inside `group` (so the name tag does not bob with it). */
   inner?: THREE.Object3D;
+  /** GLB only: holds hats, glasses, chains... so they can be swapped without touching the model. */
+  acc?: THREE.Group;
   /** GLB only: the skeleton bones we pose by hand (these models have no built-in animations). */
   bones?: Record<string, Array<{ bone: THREE.Object3D; rest: THREE.Quaternion }>>;
 }
@@ -39,6 +41,8 @@ function buildFromGLB(model: THREE.Group, look: Look): AvatarParts {
   // (and carries the name tag); the model inside is what we bob/sway to fake a walk.
   const group = new THREE.Group();
   group.add(model);
+  const acc = new THREE.Group();
+  group.add(acc);
 
   // These GLB characters are one rigged mesh with no separate arms/legs to wiggle,
   // so the "parts" are inert placeholders and animateAvatar moves the whole model instead.
@@ -46,6 +50,7 @@ function buildFromGLB(model: THREE.Group, look: Look): AvatarParts {
   const parts: AvatarParts = {
     group,
     inner: model,
+    acc,
     head: dummy(),
     body: dummy(),
     legL: dummy(),
@@ -160,6 +165,13 @@ function turn(parts: AvatarParts, name: string, axis: "x" | "y" | "z", angle: nu
 const ARM_DOWN = 1.25;
 function animateGLB(parts: AvatarParts, t: number, walking: boolean, anim: string) {
   const m = parts.inner!;
+  // (accessories are synced to the body bob at the end of this function)
+  try { animateGLBInner(parts, t, walking, anim); } finally {
+    if (parts.acc) { parts.acc.position.y = m.position.y; parts.acc.rotation.x = m.rotation.x; parts.acc.rotation.z = m.rotation.z; }
+  }
+}
+function animateGLBInner(parts: AvatarParts, t: number, walking: boolean, anim: string) {
+  const m = parts.inner!;
   if (anim === "dance") {
     const d = Math.sin(t * 8);
     m.position.y = Math.abs(d) * 0.08;
@@ -226,6 +238,118 @@ export function animateAvatar(parts: AvatarParts, t: number, walking: boolean, a
     parts.legR.rotation.x = 0;
     parts.armL.rotation.x = 0;
     parts.armR.rotation.x = 0;
+  }
+}
+
+
+// ---------------------------------------------------------------------------------------
+// OUTFITS: what the player bought and is wearing (inventory items with equipped = true).
+//  - outfit  -> changes the clothing colour
+//  - footwear-> changes the shoe colour
+//  - head / face / neck -> little 3D accessories sitting on the character
+// Wrist items (watches), phones, cars and homes are not drawn on the character.
+// ---------------------------------------------------------------------------------------
+const OUTFIT_COLOR: Record<string, string> = { "ankara-set": "#d97706", agbada: "#f3e9d2", senator: "#2b2d42" };
+const SHOE_COLOR: Record<string, string> = { slippers: "#f59e0b", "shoes-leather": "#3b2314" };
+
+function std(color: string, metal = 0, rough = 0.7) {
+  return new THREE.MeshStandardMaterial({ color, metalness: metal, roughness: rough });
+}
+
+function makeAccessory(id: string, headY: number): THREE.Object3D | null {
+  const g = new THREE.Group();
+  const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x = 0, y = 0, z = 0) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    g.add(m);
+    return m;
+  };
+  const top = headY + 0.2; // roughly the top of the head
+  switch (id) {
+    case "cap-naija": {
+      add(new THREE.SphereGeometry(0.135, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), std("#0a8f3c"), 0, top - 0.06, 0);
+      add(new THREE.CylinderGeometry(0.137, 0.137, 0.03, 16), std("#ffffff"), 0, top - 0.065, 0);
+      add(new THREE.CylinderGeometry(0.1, 0.1, 0.012, 16, 1, false, -Math.PI / 2, Math.PI), std("#0a8f3c"), 0, top - 0.07, 0.13);
+      return g;
+    }
+    case "gele": {
+      add(new THREE.TorusGeometry(0.13, 0.065, 10, 20), std("#c026d3", 0.1, 0.5), 0, top - 0.04, 0).rotation.x = Math.PI / 2;
+      const knot = add(new THREE.SphereGeometry(0.11, 12, 10), std("#e879f9", 0.1, 0.5), 0.08, top + 0.05, 0);
+      knot.scale.set(1.3, 0.8, 1);
+      return g;
+    }
+    case "fedora": {
+      add(new THREE.CylinderGeometry(0.25, 0.25, 0.015, 24), std("#111111"), 0, top - 0.07, 0);
+      add(new THREE.CylinderGeometry(0.13, 0.15, 0.13, 20), std("#111111"), 0, top - 0.01, 0);
+      add(new THREE.CylinderGeometry(0.152, 0.152, 0.03, 20), std("#b45309"), 0, top - 0.05, 0);
+      return g;
+    }
+    case "shades":
+    case "gold-shades": {
+      const c = id === "shades" ? "#050505" : "#f5c518";
+      const m = std(c, id === "shades" ? 0.3 : 0.9, 0.25);
+      const y = headY + 0.115;
+      add(new THREE.BoxGeometry(0.085, 0.05, 0.02), m, -0.055, y, 0.118);
+      add(new THREE.BoxGeometry(0.085, 0.05, 0.02), m, 0.055, y, 0.118);
+      add(new THREE.BoxGeometry(0.03, 0.012, 0.02), m, 0, y + 0.008, 0.118);
+      return g;
+    }
+    case "chain-silver":
+    case "chain-gold": {
+      const m = id === "chain-gold" ? std("#f5c518", 1, 0.25) : std("#d4d4d8", 1, 0.25);
+      const t = add(new THREE.TorusGeometry(0.115, id === "chain-gold" ? 0.013 : 0.008, 8, 24), m, 0, headY - 0.1, 0.02);
+      t.rotation.x = Math.PI / 2 - 0.25;
+      return g;
+    }
+    case "beads": {
+      const t = add(new THREE.TorusGeometry(0.115, 0.018, 8, 24), std("#f59e0b", 0.1, 0.5), 0, headY - 0.1, 0.02);
+      t.rotation.x = Math.PI / 2 - 0.25;
+      add(new THREE.SphereGeometry(0.03, 8, 8), std("#ffffff"), 0, headY - 0.18, 0.125);
+      return g;
+    }
+  }
+  return null;
+}
+
+/** Put on exactly what the player has equipped (call whenever the equipped items change). */
+export function applyOutfit(parts: AvatarParts, equippedIds: string[]) {
+  if (!parts.isGLB || !parts.inner || !parts.acc) return;
+
+  // 1) clothes + shoes colours
+  const outfitId = equippedIds.find((id) => OUTFIT_COLOR[id]);
+  const shoeId = equippedIds.find((id) => SHOE_COLOR[id]);
+  parts.inner.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const mat of mats as THREE.MeshStandardMaterial[]) {
+      const n = (mat.name || "").toLowerCase();
+      if ((n === "clothing" || n === "clothes") && outfitId && mat.color) mat.color.set(OUTFIT_COLOR[outfitId]);
+      if (n === "shoes" && mat.color) mat.color.set(shoeId ? SHOE_COLOR[shoeId] : "#ffffff");
+    }
+  });
+
+  // 2) accessories - rebuilt from scratch each time
+  while (parts.acc.children.length) {
+    const c = parts.acc.children.pop()!;
+    c.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh) { m.geometry.dispose(); (m.material as THREE.Material).dispose(); }
+    });
+  }
+  const headBone = parts.bones?.Head?.[0]?.bone;
+  let headY = 1.62; // fallback if the head bone is missing
+  if (headBone) {
+    parts.group.updateWorldMatrix(true, true);
+    const v = new THREE.Vector3();
+    headBone.getWorldPosition(v);
+    parts.group.worldToLocal(v);
+    headY = v.y;
+  }
+  for (const id of equippedIds) {
+    const a = makeAccessory(id, headY);
+    if (a) parts.acc.add(a);
   }
 }
 
