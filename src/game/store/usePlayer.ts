@@ -8,7 +8,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { clamp } from "../lib/format";
 import { START_PLACE_ID } from "../data/places";
-import { LOOK_BY_ID, type Look } from "../data/items";
+import { LOOK_BY_ID, ITEM_BY_ID, type Look } from "../data/items";
 import type { PlayerProfile } from "@/lib/firestore";
 
 export type Screen = "landing" | "title" | "game";
@@ -161,7 +161,6 @@ export const usePlayer = create<PlayerStore>()(
           dailyLastClaim: (p as any).dailyLastClaim,
           housePos: (p as any).housePos || [14, 8],
           houseCity: (p as any).houseCity || "abuja",
-          inventory: (p as any).inventory || [],
         }),
 
       setLocalName: (n) => set({ name: n }),
@@ -197,23 +196,31 @@ export const usePlayer = create<PlayerStore>()(
         const s = get();
         if (s.cash < price) return false;
         if (s.inventory.some((i) => i.id === id)) {
-          set((st) => ({
-            inventory: st.inventory.map((i) => (i.id === id ? { ...i, equipped: true } : i)),
-          }));
+          get().equipItem(id);
           return true;
         }
+        // New purchase: the character puts it on straight away.
         set({
           cash: s.cash - price,
           spentTotal: s.spentTotal + price,
           inventory: [...s.inventory, { id, equipped: false, acquiredAt: Date.now() }],
         });
+        get().equipItem(id);
         return true;
       },
 
+      // Wearing something takes off whatever was in the same slot (one cap, one outfit, one pair of shoes...).
       equipItem: (id) =>
-        set((s) => ({
-          inventory: s.inventory.map((i) => (i.id === id ? { ...i, equipped: true } : i)),
-        })),
+        set((s) => {
+          const cat = ITEM_BY_ID[id]?.category;
+          return {
+            inventory: s.inventory.map((i) => {
+              if (i.id === id) return { ...i, equipped: true };
+              if (cat && ITEM_BY_ID[i.id]?.category === cat) return { ...i, equipped: false };
+              return i;
+            }),
+          };
+        }),
       unequipItem: (id) =>
         set((s) => ({
           inventory: s.inventory.map((i) => (i.id === id ? { ...i, equipped: false } : i)),
