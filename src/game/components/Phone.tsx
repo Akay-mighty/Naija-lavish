@@ -13,56 +13,63 @@ import { apiFetch } from "../lib/apiFetch";
 
 type App = "gist" | "bank" | "wallet" | "photos" | "contacts" | "settings" | "shop";
 
-const APPS: Array<{ id: App; label: string; emoji: string; color: string }> = [
-  { id: "gist",     label: "Gist",     emoji: "💬", color: "#22c55e" },
-  { id: "bank",     label: "Bank",     emoji: "🏦", color: "#0ea5e9" },
-  { id: "wallet",   label: "Wallet",   emoji: "💵", color: "#f59e0b" },
-  { id: "shop",     label: "Boutique", emoji: "🛍️", color: "#d946ef" },
-  { id: "photos",   label: "Photos",   emoji: "📷", color: "#ef4444" },
+const APPS: Array<{ id: App; label: string; emoji: string; color: string; badge?: string }> = [
+  { id: "gist", label: "Gist", emoji: "💬", color: "#22c55e" },
+  { id: "bank", label: "Bank", emoji: "🏦", color: "#3b82f6" },
+  { id: "wallet", label: "Wallet", emoji: "💰", color: "#f59e0b" },
+  { id: "shop", label: "Boutique", emoji: "🛍️", color: "#d946ef" },
+  { id: "photos", label: "Photos", emoji: "📷", color: "#ef4444" },
   { id: "contacts", label: "Contacts", emoji: "👥", color: "#6366f1" },
   { id: "settings", label: "Settings", emoji: "⚙️", color: "#64748b" },
 ];
 
 export default function Phone({ onClose }: { onClose: () => void }) {
   const [app, setApp] = useState<App | null>(null);
+  const name = usePlayer((s) => s.name);
   const now = new Date();
-  const time = `${now.getHours().toString().padStart(2, "0")}:${now
-    .getMinutes()
-    .toString()
-    .padStart(2, "0")}`;
+  const time = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+  const dateStr = now.toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long" });
 
   return (
     <motion.div
-      className="phone-shell"
-      // framer-motion writes its own inline `transform`, which wiped out the CSS
-      // `translateX(-50%)` and pushed the phone half off-screen. So we centre it
-      // with left/right + auto margins (no transform) and let it scroll if tall.
       style={{
+        position: "fixed",
         left: 0,
         right: 0,
+        bottom: 0,
         marginLeft: "auto",
         marginRight: "auto",
-        maxHeight: "85dvh",
+        width: "min(400px, 100vw)",
+        maxHeight: "88dvh",
         overflowY: "auto",
-        paddingBottom: "calc(22px + env(safe-area-inset-bottom))",
+        background: "#0a0a0a",
+        color: "#fff",
+        borderRadius: "28px 28px 0 0",
+        paddingBottom: "calc(20px + env(safe-area-inset-bottom))",
+        boxShadow: "0 -4px 30px rgba(0,0,0,0.3)",
+        zIndex: 35,
       }}
       initial={{ y: "100%" }}
       animate={{ y: 0 }}
       exit={{ y: "100%" }}
       transition={{ type: "spring", damping: 28, stiffness: 320 }}
     >
-      {/* Top bar */}
-      <div className="flex items-center justify-between px-3 py-2 mb-3">
-        <span className="text-xs font-semibold tabnum">{time}</span>
-        <span className="text-xs text-white/70">NaijaLavish</span>
-        <button
-          className="text-white/70 hover:text-white text-base px-2"
-          onClick={onClose}
-          aria-label="Close phone"
-        >
-          ✕
-        </button>
+      {/* Dynamic Island style top */}
+      <div className="flex items-center justify-between px-4 pt-3 pb-1">
+        <span className="text-[11px] font-semibold tabnum">{time}</span>
+        <div style={{ width: 60, height: 18, background: "#000", borderRadius: 999, margin: "0 auto" }} />
+        <span className="text-[11px] opacity-60">4G 🔋</span>
       </div>
+
+      {/* Close button */}
+      <button
+        onClick={() => { sfx.play("click"); onClose(); }}
+        className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full"
+        style={{ background: "rgba(255,255,255,0.15)" }}
+        aria-label="Close phone"
+      >
+        ✕
+      </button>
 
       <AnimatePresence mode="wait">
         {app === null ? (
@@ -71,23 +78,37 @@ export default function Phone({ onClose }: { onClose: () => void }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="grid grid-cols-4 gap-3 px-3"
           >
-            {APPS.map((a) => (
-              <button
-                key={a.id}
-                onClick={() => setApp(a.id)}
-                className="flex flex-col items-center gap-1.5"
-              >
-                <span
-                  className="flex items-center justify-center w-14 h-14 rounded-2xl text-2xl"
-                  style={{ background: a.color }}
+            {/* Clock widget */}
+            <div className="text-center py-4 px-4">
+              <div style={{ fontSize: 42, fontWeight: 700, lineHeight: 1 }}>{time}</div>
+              <div className="text-[11px] opacity-60 mt-1">{dateStr} · Abuja</div>
+            </div>
+
+            {/* App grid */}
+            <div className="grid grid-cols-4 gap-3 px-4 pb-4">
+              {APPS.map((a) => (
+                <button
+                  key={a.id}
+                  onClick={() => { sfx.play("click"); setApp(a.id); }}
+                  className="flex flex-col items-center gap-1"
                 >
-                  {a.emoji}
-                </span>
-                <span className="text-[11px] text-white/80">{a.label}</span>
-              </button>
-            ))}
+                  <span
+                    className="flex items-center justify-center"
+                    style={{
+                      width: 52,
+                      height: 52,
+                      borderRadius: 14,
+                      background: a.color,
+                      fontSize: 22,
+                    }}
+                  >
+                    {a.emoji}
+                  </span>
+                  <span className="text-[9px] opacity-70">{a.label}</span>
+                </button>
+              ))}
+            </div>
           </motion.div>
         ) : (
           <motion.div
@@ -95,11 +116,11 @@ export default function Phone({ onClose }: { onClose: () => void }) {
             initial={{ opacity: 0, x: 16 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -16 }}
-            className="px-2"
+            className="px-3 pt-2 pb-4"
           >
             <button
-              className="text-white/70 text-xs mb-3 hover:text-white"
-              onClick={() => setApp(null)}
+              className="text-white/50 text-xs mb-3 hover:text-white"
+              onClick={() => { sfx.play("click"); setApp(null); }}
             >
               ← Back
             </button>
@@ -113,54 +134,21 @@ export default function Phone({ onClose }: { onClose: () => void }) {
 
 function PhoneApp({ app }: { app: App }) {
   switch (app) {
-    case "gist":
-      return <GistApp />;
-    case "bank":
-      return <BankApp />;
-    case "wallet":
-      return <WalletApp />;
-    case "shop":
-      return <ShopApp />;
-    case "photos":
-      return <PhotosApp />;
-    case "contacts":
-      return <ContactsApp />;
-    case "settings":
-      return <SettingsApp />;
+    case "gist": return <GistApp />;
+    case "bank": return <BankApp />;
+    case "wallet": return <WalletApp />;
+    case "shop": return <ShopApp />;
+    case "photos": return <PhotosApp />;
+    case "contacts": return <ContactsApp />;
+    case "settings": return <SettingsApp />;
   }
 }
 
 function GistApp() {
-  const chat = usePlayer((s) => s.chat);
   return (
     <div>
       <h3 className="font-semibold text-white mb-2">Gist</h3>
-      <ul className="flex flex-col gap-1.5">
-        {chat.slice(-30).map((m) => (
-          <li
-            key={m.id}
-            className={`flex items-start gap-1.5 ${
-              m.who === "me" ? "justify-end" : ""
-            }`}
-          >
-            {m.emoji && <span className="text-sm">{m.emoji}</span>}
-            <div
-              className={`text-xs leading-snug ${
-                m.who === "system"
-                  ? "text-white/40 italic"
-                  : m.who === "me"
-                  ? "text-emerald-300 font-medium"
-                  : "text-white/90"
-              }`}
-            >
-              {m.name && (
-                <span className="font-semibold text-white/80 mr-1">{m.name}:</span>
-              )}
-              {m.text}
-            </div>
-          </li>
-        ))}
-      </ul>
+      <p className="text-[11px] text-white/50">Live chat appears here. Close the phone and use the chat box at the bottom of the screen.</p>
     </div>
   );
 }
@@ -194,20 +182,13 @@ function BankApp() {
     sfx.play(actionId === "deposit" ? "cashSpend" : "cashEarn");
   }
 
-  function deposit() { void callBank("deposit"); }
-  function withdraw() { void callBank("withdraw"); }
-
   return (
     <div>
       <h3 className="font-semibold text-white mb-2">NaijaLavish Bank</h3>
       <div className="rounded-xl bg-white/5 p-3 mb-3">
         <div className="text-[11px] text-white/50">Bank balance</div>
-        <div className="text-2xl font-bold tabnum text-white">
-          {naira(bank)}
-        </div>
-        <div className="text-[11px] text-white/40 mt-1">
-          Wallet: {naira(cash)}
-        </div>
+        <div className="text-2xl font-bold tabnum text-white">{naira(bank)}</div>
+        <div className="text-[11px] text-white/40 mt-1">Wallet: {naira(cash)}</div>
       </div>
       <div className="rounded-xl bg-white/5 p-3 mb-3">
         <div className="text-[11px] text-white/50">Lifetime</div>
@@ -216,62 +197,34 @@ function BankApp() {
           <span>Spent: {shortNaira(spentTotal)}</span>
         </div>
       </div>
-
-      {/* Daily streak */}
-      <div className="rounded-xl bg-gradient-to-br from-amber-600/20 to-orange-600/20 border border-amber-500/30 p-3 mb-3">
-        <div className="text-[11px] text-amber-300/80 mb-1">Daily reward streak</div>
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-2xl">🔥</span>
+      <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 mb-3">
+        <div className="text-[11px] text-amber-300/80 mb-1">🔥 Daily streak</div>
+        <div className="flex items-center gap-2">
           <b className="text-xl text-white tabnum">{dailyStreak || 0}<span className="text-sm text-white/50">/7</span></b>
         </div>
         <div className="flex gap-1 mt-2">
-          {[1, 2, 3, 4, 5, 6, 7].map((day) => (
-            <div
-              key={day}
-              className={`flex-1 h-1.5 rounded-full ${(dailyStreak || 0) >= day ? "bg-amber-400" : "bg-white/10"}`}
-            />
+          {[1,2,3,4,5,6,7].map(d => (
+            <div key={d} className={`flex-1 h-1 rounded-full ${(dailyStreak||0) >= d ? "bg-amber-400" : "bg-white/10"}`} />
           ))}
         </div>
-        <div className="text-[10px] text-white/50 mt-1.5">
-          Come back tomorrow for ₦{dailyStreak && dailyStreak >= 7 ? "1,000" : ["1,000","1,500","2,000","3,000","4,000","5,000","10,000"][dailyStreak || 0]}
-        </div>
       </div>
-
       <label className="block text-[11px] text-white/60 mb-1">Amount (₦)</label>
       <div className="flex gap-1 mb-2">
-        {[500, 1000, 5000, 10000].map((amt) => (
-          <button
-            key={amt}
-            onClick={() => setAmount(amt)}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition ${
-              amount === amt
-                ? "bg-emerald-500 text-white"
-                : "bg-white/5 text-white/70"
-            }`}
-          >
+        {[500, 1000, 5000, 10000].map(amt => (
+          <button key={amt} onClick={() => setAmount(amt)}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-medium ${amount === amt ? "bg-emerald-500 text-white" : "bg-white/5 text-white/70"}`}>
             {shortNaira(amt)}
           </button>
         ))}
       </div>
-      <input
-        type="number"
-        value={amount}
-        onChange={(e) => setAmount(Math.max(0, parseInt(e.target.value) || 0))}
-        className="w-full px-3 py-2 rounded-lg bg-white/5 text-white text-sm mb-3 outline-none"
-      />
+      <input type="number" value={amount}
+        onChange={e => setAmount(Math.max(0, parseInt(e.target.value) || 0))}
+        className="w-full px-3 py-2 rounded-lg bg-white/5 text-white text-sm mb-3 outline-none" />
       <div className="grid grid-cols-2 gap-2">
-        <button
-          onClick={deposit}
-          className="py-2.5 rounded-lg bg-emerald-500 text-white text-sm font-medium"
-        >
-          Deposit
-        </button>
-        <button
-          onClick={withdraw}
-          className="py-2.5 rounded-lg bg-white/10 text-white text-sm font-medium"
-        >
-          Withdraw
-        </button>
+        <button onClick={() => callBank("deposit")} disabled={busy}
+          className="py-2.5 rounded-lg bg-emerald-500 text-white text-sm font-medium disabled:opacity-50">Deposit</button>
+        <button onClick={() => callBank("withdraw")} disabled={busy}
+          className="py-2.5 rounded-lg bg-white/10 text-white text-sm font-medium disabled:opacity-50">Withdraw</button>
       </div>
     </div>
   );
@@ -281,41 +234,22 @@ function WalletApp() {
   const cash = usePlayer((s) => s.cash);
   const bank = usePlayer((s) => s.bank);
   const inventory = usePlayer((s) => s.inventory);
-  const totalVibeBoost = inventory
-    .filter((i) => i.equipped)
-    .reduce((acc, i) => acc + (ITEM_BY_ID[i.id]?.vibeBoost ?? 0), 0);
-
-  // Net worth
-  const itemsValue = inventory.reduce(
-    (acc, i) => acc + (ITEM_BY_ID[i.id]?.price ?? 0),
-    0
-  );
+  const itemsValue = inventory.reduce((acc, i) => acc + (ITEM_BY_ID[i.id]?.price || 0), 0);
   const netWorth = cash + bank + itemsValue;
+  const totalVibeBoost = inventory.filter(i => i.equipped).reduce((acc, i) => acc + (ITEM_BY_ID[i.id]?.vibeBoost || 0), 0);
 
   return (
     <div>
       <h3 className="font-semibold text-white mb-2">Wallet</h3>
       <div className="rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 p-3 mb-3">
         <div className="text-[11px] text-white/80">Net worth</div>
-        <div className="text-2xl font-bold tabnum text-white">
-          {naira(netWorth)}
-        </div>
-        <div className="text-[11px] text-white/70 mt-1">
-          Cash {shortNaira(cash)} · Bank {shortNaira(bank)} · Items{" "}
-          {shortNaira(itemsValue)}
-        </div>
+        <div className="text-2xl font-bold tabnum text-white">{naira(netWorth)}</div>
+        <div className="text-[11px] text-white/70 mt-1">Cash {shortNaira(cash)} · Bank {shortNaira(bank)} · Items {shortNaira(itemsValue)}</div>
       </div>
       <div className="rounded-xl bg-white/5 p-3 mb-2">
         <div className="text-[11px] text-white/50 mb-1">Outfit vibe bonus</div>
-        <div className="text-lg font-bold text-emerald-400">
-          +{totalVibeBoost} vibe
-        </div>
-        <div className="text-[11px] text-white/40 mt-1">
-          From {inventory.filter((i) => i.equipped).length} equipped items
-        </div>
-      </div>
-      <div className="text-[11px] text-white/50 text-center mt-4">
-        Use Boutique to buy more flex. Equip at Home → Wardrobe.
+        <div className="text-lg font-bold text-emerald-400">+{totalVibeBoost} vibe</div>
+        <div className="text-[11px] text-white/40 mt-1">From {inventory.filter(i => i.equipped).length} equipped items</div>
       </div>
     </div>
   );
@@ -326,73 +260,59 @@ function ShopApp() {
   const buyItem = usePlayer((s) => s.buyItem);
   const ownsItem = usePlayer((s) => s.ownsItem);
   const equipItem = usePlayer((s) => s.equipItem);
-  const [filter, setFilter] = useState<string>("all");
-
-  const cats = ["all", "head", "face", "neck", "wrist", "outfit", "phone", "footwear", "vehicle", "home"];
-  const filtered = filter === "all" ? ITEMS : ITEMS.filter((i) => i.category === filter);
+  const applyActionResult = usePlayer((s) => s.applyActionResult);
+  const idToken = useAuth((s) => s.idToken);
+  const [filter, setFilter] = useState("all");
+  const cats = ["all","head","face","neck","wrist","outfit","phone","footwear","vehicle","home"];
+  const filtered = filter === "all" ? ITEMS : ITEMS.filter(i => i.category === filter);
 
   return (
     <div>
       <h3 className="font-semibold text-white mb-2">Boutique</h3>
       <div className="text-[11px] text-white/50 mb-2">Wallet: {naira(cash)}</div>
       <div className="flex gap-1 overflow-x-auto no-scrollbar mb-3 -mx-1 px-1">
-        {cats.map((c) => (
-          <button
-            key={c}
-            onClick={() => setFilter(c)}
-            className={`flex-none px-2.5 py-1 rounded-full text-[11px] font-medium transition ${
-              filter === c ? "bg-emerald-500 text-white" : "bg-white/5 text-white/70"
-            }`}
-          >
+        {cats.map(c => (
+          <button key={c} onClick={() => setFilter(c)}
+            className={`flex-none px-2.5 py-1 rounded-full text-[11px] font-medium ${filter === c ? "bg-emerald-500 text-white" : "bg-white/5 text-white/70"}`}>
             {c}
           </button>
         ))}
       </div>
-      <div className="overflow-y-auto no-scrollbar">
+      <div className="max-h-[50vh] overflow-y-auto no-scrollbar">
         <ul className="flex flex-col gap-1.5">
-          {filtered.map((item) => {
+          {filtered.map(item => {
             const owned = ownsItem(item.id);
             const canAfford = cash >= item.price;
             return (
-              <li
-                key={item.id}
-                className="flex items-center gap-2 p-2 rounded-lg bg-white/5"
-              >
+              <li key={item.id} className="flex items-center gap-2 p-2 rounded-lg bg-white/5">
                 <span className="text-xl">{item.emoji}</span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm text-white font-medium truncate">
-                    {item.name}
-                  </div>
-                  {item.vibeBoost && (
-                    <div className="text-[10px] text-emerald-400">+{item.vibeBoost} vibe</div>
-                  )}
+                  <div className="text-sm text-white font-medium truncate">{item.name}</div>
+                  {item.vibeBoost && <div className="text-[10px] text-emerald-400">+{item.vibeBoost} vibe</div>}
                 </div>
                 {owned ? (
-                  <button
-                    onClick={() => {
-                      equipItem(item.id);
-                      toast(`${item.name} equipped!`, "success");
-                    }}
-                    className="px-2.5 py-1.5 rounded-lg bg-emerald-500 text-white text-[11px] font-medium"
-                  >
-                    Equip
-                  </button>
+                  <button onClick={() => { sfx.play("click"); equipItem(item.id); toast("Equipped!", "success"); }}
+                    className="px-2.5 py-1.5 rounded-lg bg-emerald-500 text-white text-[11px] font-medium">Equip</button>
                 ) : (
                   <button
-                    onClick={() => {
-                      if (buyItem(item.id, item.price)) {
+                    onClick={async () => {
+                      if (!idToken) return;
+                      const r = await apiFetch("/api/action", {
+                        method: "POST",
+                        body: { action: "buy-item", actionId: "buy-item", itemId: item.id, itemPrice: item.price, placeId: "boutique" },
+                        idToken,
+                      });
+                      if (r.ok && r.data?.ok) {
+                        applyActionResult(r.data.result);
                         toast(`Bought ${item.name}!`, "success");
+                        sfx.play("cashSpend");
                       } else {
-                        toast("Not enough cash.", "warn");
+                        toast(r.error || "Not enough cash.", "warn");
                       }
                     }}
                     disabled={!canAfford}
                     className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium disabled:opacity-50"
-                    style={{
-                      background: canAfford ? "var(--primary)" : "rgba(255,255,255,0.1)",
-                      color: canAfford ? "white" : "rgba(255,255,255,0.5)",
-                    }}
-                  >
+                    style={{ background: canAfford ? "var(--primary)" : "rgba(255,255,255,0.1)", color: canAfford ? "white" : "rgba(255,255,255,0.5)" }}>
                     {naira(item.price)}
                   </button>
                 )}
@@ -420,61 +340,47 @@ function PhotosApp() {
         <div className="text-white/70 text-[11px] mb-1">Your Lavish Card</div>
         <div className="text-2xl font-bold text-white">{name || "Guest"}</div>
         <div className="flex justify-between mt-3 text-white">
-          <div>
-            <div className="text-[10px] opacity-70">Wallet</div>
-            <div className="font-bold tabnum">{naira(cash)}</div>
-          </div>
-          <div>
-            <div className="text-[10px] opacity-70">Vibe</div>
-            <div className="font-bold tabnum">{Math.round(vibe)}/100</div>
-          </div>
+          <div><div className="text-[10px] opacity-70">Wallet</div><div className="font-bold tabnum">{naira(cash)}</div></div>
+          <div><div className="text-[10px] opacity-70">Vibe</div><div className="font-bold tabnum">{Math.round(vibe)}/100</div></div>
         </div>
         <div className="flex justify-between mt-2 text-white/80 text-[11px]">
-          <span>Energy {Math.round(energy)}</span>
-          <span>Belle {Math.round(hunger)}</span>
-          <span>Items {inventory.length}</span>
+          <span>⚡ {Math.round(energy)}</span><span>🍽️ {Math.round(hunger)}</span><span>🎒 {inventory.length}</span>
         </div>
-      </div>
-      <div className="grid grid-cols-3 gap-1.5">
-        {["🏛️", "🌳", "🌊", "🏙️", "🍽️", "🎉"].map((emoji, i) => (
-          <div
-            key={i}
-            className="aspect-square rounded-lg bg-white/5 flex items-center justify-center text-2xl"
-          >
-            {emoji}
-          </div>
-        ))}
-      </div>
-      <div className="text-[11px] text-white/40 text-center mt-3">
-        Memory album coming soon. For now, your Lavish Card is the flex.
       </div>
     </div>
   );
 }
 
 function ContactsApp() {
+  const uid = useAuth((s) => s.uid);
+  const name = usePlayer((s) => s.name);
+
+  async function inviteToHouse() {
+    sfx.play("click");
+    const url = `${window.location.origin}/?house=${uid}`;
+    const shareData = { title: "NaijaLavish — come to my house!", text: `Hey! I'm ${name}. Come hang out at my house 🏠`, url };
+    try {
+      if (navigator.share) await navigator.share(shareData);
+      else { await navigator.clipboard.writeText(url); toast("Link copied!", "success", "📋"); }
+    } catch {}
+  }
+
   return (
     <div>
       <h3 className="font-semibold text-white mb-2">Contacts</h3>
-      <div className="text-[11px] text-white/50 mb-3">
-        People you've met in Abuja
-      </div>
+      <button onClick={inviteToHouse}
+        className="w-full mb-3 p-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-sm font-medium flex items-center gap-2">
+        🏠 Invite friends to my house
+      </button>
+      <div className="text-[11px] text-white/50 mb-3">People you've met</div>
       <ul className="flex flex-col gap-1">
-        {NPCS.slice(0, 12).map((n) => (
-          <li
-            key={n.id}
-            className="flex items-center gap-2 p-2 rounded-lg bg-white/5"
-          >
+        {NPCS.slice(0, 12).map(n => (
+          <li key={n.id} className="flex items-center gap-2 p-2 rounded-lg bg-white/5">
             <span className="text-xl">{n.emoji}</span>
             <div className="flex-1">
               <div className="text-sm text-white font-medium">{n.name}</div>
-              <div className="text-[10px] text-white/40 capitalize">
-                {n.vibe}
-              </div>
+              <div className="text-[10px] text-white/40 capitalize">{n.vibe}</div>
             </div>
-            <button className="px-2.5 py-1 rounded-lg bg-emerald-500 text-white text-[11px] font-medium">
-              Gist
-            </button>
           </li>
         ))}
       </ul>
@@ -497,37 +403,21 @@ function SettingsApp() {
       <div className="rounded-xl bg-white/5 p-3 mb-3">
         <div className="text-xs text-white/50">Display name</div>
         <div className="text-base font-semibold text-white">{name}</div>
-        {username && (
-          <div className="text-xs text-white/40 mt-1">@{username}</div>
-        )}
+        {username && <div className="text-xs text-white/40 mt-1">@{username}</div>}
         <div className="text-[11px] text-white/40 mt-2">
-          {isGuest ? "Guest account" : "Full account"} · joined{" "}
-          {createdAt ? new Date(createdAt).toLocaleDateString() : "—"}
+          {isGuest ? "Guest" : "Account"} · joined {createdAt ? new Date(createdAt).toLocaleDateString() : "—"}
         </div>
       </div>
       <div className="rounded-xl bg-white/5 p-3 mb-3">
-        <div className="text-xs text-white/50 mb-1">About NaijaLavish</div>
+        <div className="text-xs text-white/50 mb-1">About</div>
         <p className="text-[11px] text-white/70 leading-relaxed">
-          A free life game set in Abuja, Nigeria. Hustle, ride, link up and
-          spray money at the owambe. Ages 18+. Be kind — no real money, no
-          links, no phone numbers in chat.
+          A free life game set in Abuja, Nigeria. Hustle, ride, link up and spray money at the owambe. Ages 18+.
         </p>
       </div>
       <button
-        onClick={async () => {
-          if (confirm("Log out? Your progress syncs to your account.")) {
-            await signOut();
-            logout();
-            setScreen("landing");
-          }
-        }}
-        className="w-full py-2.5 rounded-lg bg-red-500/20 text-red-300 text-sm font-medium"
-      >
-        Log out
-      </button>
-      <div className="text-[10px] text-white/30 text-center mt-3">
-        NaijaLavish v2.0 · Made with love for Naija
-      </div>
+        onClick={async () => { if (confirm("Log out?")) { await signOut(); logout(); setScreen("landing"); } }}
+        className="w-full py-2.5 rounded-lg bg-red-500/20 text-red-300 text-sm font-medium">Log out</button>
+      <div className="text-[10px] text-white/30 text-center mt-3">NaijaLavish v2.0 · Made with love for Naija 🇳🇬</div>
     </div>
   );
 }
