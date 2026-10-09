@@ -1,14 +1,25 @@
 "use client";
 
-// Shared fetch helper that ALWAYS returns JSON (never throws on HTML responses).
-// If the server returns HTML (e.g. 500 error page), we convert it to a
-// friendly JSON error instead of letting res.json() throw "Unexpected token '<'".
+// Shared fetch helper that ALWAYS returns a result object (never throws).
+// If the server answers with something that is not JSON (an HTML/plain-text
+// error page), we show the HTTP status and the first words of the page so the
+// real problem is visible instead of "Unexpected token '<'".
 
 export interface ApiResult<T = any> {
   ok: boolean;
   data?: T;
   error?: string;
   status: number;
+}
+
+function snippet(text: string): string {
+  return text
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 140);
 }
 
 export async function apiFetch<T = any>(
@@ -30,24 +41,27 @@ export async function apiFetch<T = any>(
       body: body ? JSON.stringify(body) : undefined,
     });
 
-    // Always try to parse as JSON; if it fails (HTML error page), return friendly error
     const text = await res.text();
     let data: any;
     try {
       data = JSON.parse(text);
     } catch {
-      // Server returned HTML (likely a 500 error page or 404)
       if (res.status === 404) {
-        return { ok: false, status: 404, error: "API endpoint not found. Make sure you deployed the latest code." };
+        return { ok: false, status: 404, error: "API endpoint not found. Make sure the latest code is deployed." };
       }
+      const s = snippet(text);
       return {
         ok: false,
         status: res.status,
-        error: `Server returned an error (status ${res.status}). Check your Firebase service account configuration in src/lib/server/serviceAccount.ts.`,
+        error: `Server problem (status ${res.status})${s ? `: ${s}` : ""}. Open /api/health on your site to see what is wrong.`,
       };
     }
 
-    return { ok: res.ok && data?.ok !== false, data, status: res.status, error: data?.error };
+    // JSON error from our routes: message + optional "what to do" hint
+    const message = data?.error
+      ? `${data.error}${data.hint ? ` ${data.hint}` : ""}`
+      : undefined;
+    return { ok: res.ok && data?.ok !== false, data, status: res.status, error: message };
   } catch (e: any) {
     return { ok: false, status: 0, error: e?.message || "Network error. Check your connection." };
   }
