@@ -50,20 +50,29 @@ service cloud.firestore {
 
 ## 2. Realtime Database Rules
 
-Copy-paste this into Firebase Console → Realtime Database → Rules:
+Copy-paste this into Firebase Console → Realtime Database → Rules, then tap **Publish**:
 
 ```json
 {
   "rules": {
     "presence": {
+      ".read": "auth != null",
       "$uid": {
-        ".read": "auth != null",
-        ".write": "auth.uid == $uid"
+        ".write": "auth != null && auth.uid == $uid"
       }
     }
   }
 }
 ```
+
+**Why `.read` sits on `presence` and not on `$uid`:** the game listens to the whole
+`presence` list to draw the other players. A read rule on `$uid` only allows reading ONE
+player's node, so listing everyone is refused and players can never see each other.
+
+**Check the database URL.** In Firebase Console → Realtime Database, the address shown at
+the top is the real URL. A database created in `europe-west1` looks like
+`https://naijalavish-default-rtdb.europe-west1.firebasedatabase.app`, not `...firebaseio.com`.
+It must match `databaseURL` in `src/lib/firebase.ts`.
 
 ## 3. Enable Authentication Providers
 
@@ -71,7 +80,8 @@ Firebase Console → Authentication → Sign-in method:
 
 1. **Anonymous** → Enable ✅
 2. **Google** → Enable ✅ (you already did this)
-3. Add your domain to **Authorized domains**: `naija-lavish.vercel.app`
+3. **Email/Password** → Enable ✅ (players log in with it; the first "Email/Password" switch only, not "Email link")
+4. Add your domain to **Authorized domains**: `naija-lavish.vercel.app`
 
 ## 4. Enable Firestore Database
 
