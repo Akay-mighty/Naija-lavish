@@ -17,6 +17,10 @@ export interface AvatarParts {
   armR: THREE.Mesh;
   hair?: THREE.Mesh;
   isGLB: boolean;
+  /** GLB only: the model inside `group` (so the name tag does not bob with it). */
+  inner?: THREE.Object3D;
+  /** GLB only: the skeleton bones we pose by hand (these models have no built-in animations). */
+  bones?: Record<string, Array<{ bone: THREE.Object3D; rest: THREE.Quaternion }>>;
 }
 
 /** Build an avatar from a Look. Uses GLB model if loaded, else procedural. */
@@ -29,36 +33,45 @@ export function buildAvatar(look: Look): AvatarParts {
   return buildProcedural(look);
 }
 
-/** Build from a loaded GLB model. Applies look-based coloring. */
+/** Build from a loaded GLB model. */
 function buildFromGLB(model: THREE.Group, look: Look): AvatarParts {
-  const group = model;
-  // Find key parts for animation
-  let head = new THREE.Mesh();
-  let body = new THREE.Mesh();
-  let legL = new THREE.Mesh();
-  let legR = new THREE.Mesh();
-  let armL = new THREE.Mesh();
-  let armR = new THREE.Mesh();
+  // The model sits inside a wrapper group. The wrapper is what gets moved around the city
+  // (and carries the name tag); the model inside is what we bob/sway to fake a walk.
+  const group = new THREE.Group();
+  group.add(model);
 
-  group.traverse((obj) => {
-    const mesh = obj as THREE.Mesh;
-    if (mesh.isMesh) {
-      const name = mesh.name.toLowerCase();
-      // Try to identify parts by name
-      if (name.includes("head") && !head.geometry) head = mesh;
-      else if (name.includes("body") || name.includes("torso")) body = mesh;
-      else if (name.includes("leg") && name.includes("l")) legL = mesh;
-      else if (name.includes("leg") && name.includes("r")) legR = mesh;
-      else if (name.includes("arm") && name.includes("l")) armL = mesh;
-      else if (name.includes("arm") && name.includes("r")) armR = mesh;
-      else if (!head.geometry && !body.geometry) head = mesh; // fallback
-    }
+  // These GLB characters are one rigged mesh with no separate arms/legs to wiggle,
+  // so the "parts" are inert placeholders and animateAvatar moves the whole model instead.
+  const dummy = () => new THREE.Mesh();
+  const parts: AvatarParts = {
+    group,
+    inner: model,
+    head: dummy(),
+    body: dummy(),
+    legL: dummy(),
+    legR: dummy(),
+    armL: dummy(),
+    armR: dummy(),
+    isGLB: true,
+  };
+  // Find the Mixamo bones we want to pose (names look like "mixamorigLeftArm").
+  const want = ["LeftArm", "RightArm", "LeftForeArm", "RightForeArm", "LeftUpLeg", "RightUpLeg", "LeftLeg", "RightLeg", "Spine", "Head"];
+  const bones: NonNullable<AvatarParts["bones"]> = {};
+  // The converter that made these GLBs repeats each bone as a nested chain
+  // (mixamorigLeftArm < mixamorigLeftArm_1 < mixamorigLeftArm_2), and the skeleton hangs off
+  // the OUTERMOST one. Turning only that outer bone moves every copy inside it.
+  const baseName = (n: string) => n.replace(/^mixamorig[:_]?/i, "").replace(/_\d+$/, "");
+  model.traverse((o) => {
+    if (!(o as THREE.Bone).isBone) return;
+    const key = baseName(o.name);
+    if (!want.includes(key)) return;
+    if (o.parent && baseName(o.parent.name) === key) return; // not the outer one
+    (bones[key] ||= []).push({ bone: o, rest: o.quaternion.clone() });
   });
-
-  // If no parts found, use the whole model for animation
-  if (!body.geometry) body = head;
-
-  return { group, head, body, legL, legR, armL, armR, isGLB: true };
+  parts.bones = bones;
+  animateGLB(parts, 0, false, "idle");
+  recolorAvatar(parts, look);
+  return parts;
 }
 
 /** Build procedural avatar (fallback when GLB not loaded). */
@@ -129,8 +142,66 @@ function buildProcedural(look: Look): AvatarParts {
   return { group, head, body, legL, legR, armL, armR, hair, isGLB: false };
 }
 
+
+const _q = new THREE.Quaternion();
+const _ax = new THREE.Vector3();
+/** Pose a bone: its original rotation, then an extra turn of `angle` radians around axis (x|y|z). */
+function turn(parts: AvatarParts, name: string, axis: "x" | "y" | "z", angle: number) {
+  const list = parts.bones?.[name];
+  if (!list) return;
+  _ax.set(axis === "x" ? 1 : 0, axis === "y" ? 1 : 0, axis === "z" ? 1 : 0);
+  _q.setFromAxisAngle(_ax, angle);
+  for (const b of list) b.bone.quaternion.copy(b.rest).multiply(_q);
+}
+
+/** Hand-made animation for the rigged GLB characters (they ship in a T-pose with no clips). */
+// Axis notes (found by test renders): turning an arm bone about X lowers/raises it
+// (+1.2 = hanging at the side), turning a leg bone about X swings it forward/back.
+const ARM_DOWN = 1.25;
+function animateGLB(parts: AvatarParts, t: number, walking: boolean, anim: string) {
+  const m = parts.inner!;
+  if (anim === "dance") {
+    const d = Math.sin(t * 8);
+    m.position.y = Math.abs(d) * 0.08;
+    m.rotation.z = Math.sin(t * 4) * 0.1;
+    m.rotation.x = 0;
+    turn(parts, "LeftArm", "x", -0.9 + d * 0.5);   // arms up and pumping
+    turn(parts, "RightArm", "x", -0.9 - d * 0.5);
+    turn(parts, "LeftUpLeg", "x", d * 0.3);
+    turn(parts, "RightUpLeg", "x", -d * 0.3);
+    turn(parts, "LeftLeg", "x", Math.max(0, -d) * 0.5);
+    turn(parts, "RightLeg", "x", Math.max(0, d) * 0.5);
+    return;
+  }
+  m.rotation.z = 0;
+  if (walking) {
+    const sw = Math.sin(t * 9);
+    m.position.y = Math.abs(Math.sin(t * 9)) * 0.04;
+    m.rotation.x = 0.04;
+    turn(parts, "LeftUpLeg", "x", sw * 0.55);
+    turn(parts, "RightUpLeg", "x", -sw * 0.55);
+    turn(parts, "LeftLeg", "x", Math.max(0, -sw) * 0.7);
+    turn(parts, "RightLeg", "x", Math.max(0, sw) * 0.7);
+    turn(parts, "LeftArm", "x", ARM_DOWN - sw * 0.45);
+    turn(parts, "RightArm", "x", ARM_DOWN + sw * 0.45);
+  } else {
+    m.position.y = Math.sin(t * 2) * 0.008;
+    m.rotation.x = 0;
+    turn(parts, "LeftUpLeg", "x", 0);
+    turn(parts, "RightUpLeg", "x", 0);
+    turn(parts, "LeftLeg", "x", 0);
+    turn(parts, "RightLeg", "x", 0);
+    turn(parts, "LeftArm", "x", ARM_DOWN + Math.sin(t * 2) * 0.03);
+    turn(parts, "RightArm", "x", ARM_DOWN + Math.sin(t * 2) * 0.03);
+  }
+}
+
 /** Update avatar animation given a phase (seconds) + walking flag. */
 export function animateAvatar(parts: AvatarParts, t: number, walking: boolean, anim: string = "idle") {
+  if (parts.isGLB && parts.inner) {
+    animateGLB(parts, t, walking, anim);
+    return;
+  }
   if (anim === "dance") {
     parts.head.position.y = 1.45 + Math.sin(t * 8) * 0.08;
     parts.body.rotation.z = Math.sin(t * 6) * 0.15;
@@ -160,6 +231,20 @@ export function animateAvatar(parts: AvatarParts, t: number, walking: boolean, a
 
 /** Update avatar colors when look changes. */
 export function recolorAvatar(parts: AvatarParts, look: Look) {
+  if (parts.isGLB && parts.inner) {
+    // Colour the GLB by material name: "skin" gets the skin tone, "clothing" the outfit colour.
+    parts.inner.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const mat of mats as THREE.MeshStandardMaterial[]) {
+        const n = (mat.name || "").toLowerCase();
+        if (n === "skin" && mat.color) mat.color.set(look.skin);
+        else if ((n === "clothing" || n === "clothes") && mat.color) mat.color.set(look.top);
+      }
+    });
+    return;
+  }
   (parts.head.material as THREE.MeshStandardMaterial).color.set(look.skin);
   (parts.body.material as THREE.MeshStandardMaterial).color.set(look.top);
   (parts.legL.material as THREE.MeshStandardMaterial).color.set(look.bottom);

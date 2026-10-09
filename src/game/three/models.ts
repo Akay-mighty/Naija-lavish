@@ -6,15 +6,38 @@
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 
 const cache = new Map<string, THREE.Group>();
 
 const loader = new GLTFLoader();
 
+/**
+ * Make an independent copy of a loaded model.
+ * IMPORTANT: a plain Object3D .clone() does NOT work for rigged (skinned) characters - every
+ * copy shares the SAME skeleton, so only one person shows up properly and the rest look
+ * broken. SkeletonUtils.clone gives each copy its own skeleton. We also give each copy its own
+ * materials so changing one player's colours never changes everybody else's.
+ */
+export function cloneModel(base: THREE.Object3D): THREE.Group {
+  const copy = cloneSkinned(base) as THREE.Group;
+  copy.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (mesh.isMesh) {
+      mesh.material = Array.isArray(mesh.material)
+        ? mesh.material.map((m) => m.clone())
+        : (mesh.material as THREE.Material).clone();
+      mesh.frustumCulled = false; // skinned meshes can be wrongly hidden by culling
+    }
+  });
+  return copy;
+}
+
+
 /** Load a GLB model from /models/ path. Returns a Promise that resolves to a cloned Group. */
 export async function loadModel(path: string): Promise<THREE.Group> {
   if (cache.has(path)) {
-    return Promise.resolve(cache.get(path)!.clone(true));
+    return Promise.resolve(cloneModel(cache.get(path)!));
   }
   return new Promise((resolve, reject) => {
     loader.load(
@@ -40,7 +63,7 @@ export async function loadModel(path: string): Promise<THREE.Group> {
           }
         });
         cache.set(path, model);
-        resolve(model.clone(true));
+        resolve(cloneModel(model));
       },
       undefined,
       (err) => reject(err)
@@ -78,7 +101,7 @@ export async function preloadCharacters(): Promise<void> {
 export function getCharacterModel(gender: "man" | "woman"): THREE.Group | null {
   const base = gender === "woman" ? femaleModel : maleModel;
   if (!base) return null;
-  return base.clone(true);
+  return cloneModel(base);
 }
 
 /** Check if character models are loaded. */
@@ -104,5 +127,5 @@ export async function preloadCar(): Promise<void> {
 /** Get a truck model clone. Returns null if not loaded yet. */
 export function getTruckModel(): THREE.Group | null {
   if (!truckModel) return null;
-  return truckModel.clone(true);
+  return cloneModel(truckModel);
 }
