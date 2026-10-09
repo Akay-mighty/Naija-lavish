@@ -284,12 +284,18 @@ export function listenToAdminActions(cb: (actions: AdminAction[]) => void): Unsu
   );
 }
 
-export function listenToAllPlayers(cb: (players: Array<{ id: string } & PlayerProfile>) => void): Unsubscribe {
+export function listenToAllPlayers(
+  cb: (players: Array<{ id: string } & PlayerProfile>) => void,
+  onError?: (err: { code?: string; message?: string }) => void
+): Unsubscribe {
   const q = query(collection(db, "players"), orderBy("lastSeen", "desc"), limit(200));
   return onSnapshot(
     q,
     (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as PlayerProfile) }))),
-    (err) => console.warn("[firestore] listenToPlayers:", err)
+    (err) => {
+      console.warn("[firestore] listenToPlayers:", err);
+      onError?.(err);
+    }
   );
 }
 
