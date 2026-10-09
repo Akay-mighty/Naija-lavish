@@ -206,14 +206,21 @@ export default function Game() {
     }
   }, [soloMode]);
 
-  // Character arrival → open place sheet (NO toast — the place card in HUD already shows it)
+  // Character arrival → just a small tappable chip at the bottom. It used to open the big place
+  // sheet by itself every time you arrived, which covered the whole screen. Now you choose.
+  const [arrivedAt, setArrivedAt] = useState<string | null>(null);
+  useEffect(() => {
+    if (!arrivedAt) return;
+    const t = window.setTimeout(() => setArrivedAt(null), 7000);
+    return () => window.clearTimeout(t);
+  }, [arrivedAt]);
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { placeId: string };
       setSheetPlaceId(detail.placeId);
       setPlace(detail.placeId);
       setTargetPlaceId(null);
-      setSheet("place");
+      setArrivedAt(detail.placeId);
       sfx.play("arrive");
     };
     window.addEventListener("naijalavish:arrive", handler as EventListener);
@@ -314,6 +321,26 @@ export default function Game() {
 
       {!hideUI && <HUD />}
       {!hideUI && <Chat />}
+
+      {arrivedAt && !sheet && !hideUI && PLACE_BY_ID[arrivedAt] && (
+        <button
+          onClick={() => { setSheetPlaceId(arrivedAt); setSheet("place"); setArrivedAt(null); }}
+          className="absolute left-1/2 z-30 flex items-center gap-2 px-4 py-2.5 shadow-lg"
+          style={{
+            transform: "translateX(-50%)",
+            bottom: "calc(88px + env(safe-area-inset-bottom))",
+            borderRadius: 999,
+            background: "rgba(15,28,22,0.92)",
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 600,
+          }}
+        >
+          <span>📍</span>
+          <span>{PLACE_BY_ID[arrivedAt].name}</span>
+          <span style={{ color: "#4ade80" }}>Open →</span>
+        </button>
+      )}
 
       <PlaceSheet
         open={sheet === "place"}

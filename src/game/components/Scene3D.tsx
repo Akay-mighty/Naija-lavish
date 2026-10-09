@@ -13,7 +13,7 @@ import {
   serverTimestamp as dbNow,
   onDisconnect as dbOnDisconnect,
 } from "firebase/database";
-import { buildAvatar, recolorAvatar, animateAvatar, buildNameTag } from "../three/avatar";
+import { buildAvatar, recolorAvatar, animateAvatar, buildNameTag, applyOutfit } from "../three/avatar";
 import { buildPlace } from "../three/city";
 import { buildGround, buildInstancedProps, buildBillboards, buildAmbientTraffic, type TrafficSystem } from "../three/props";
 import { RemotePlayers } from "../three/remotePlayers";
@@ -162,6 +162,7 @@ export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
     scene.add(parts.group);
     charRef.current = parts.group;
     avatarPartsRef.current = parts;
+    applyOutfit(parts, usePlayer.getState().inventory.filter((i) => i.equipped).map((i) => i.id));
 
     // Name tag above local player
     const nameTag = buildNameTag(usePlayer.getState().name || "You", true);
@@ -604,11 +605,15 @@ export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
 
   // ---- Update avatar look when player lookId changes ----
   const lookId = usePlayer((s) => s.lookId);
+  // What the player is wearing right now, as one string so React only reacts when it really changes.
+  const wornKey = usePlayer((s) => s.inventory.filter((i) => i.equipped).map((i) => i.id).sort().join(","));
   useEffect(() => {
     if (!avatarPartsRef.current) return;
     const look = activeLook(usePlayer.getState());
     recolorAvatar(avatarPartsRef.current, look);
-  }, [lookId]);
+    // bought clothes go on top of the base look
+    applyOutfit(avatarPartsRef.current, wornKey ? wornKey.split(",") : []);
+  }, [lookId, wornKey]);
 
   // ---- Update name tag when name changes ----
   const name = usePlayer((s) => s.name);
