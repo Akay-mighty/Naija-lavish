@@ -77,7 +77,7 @@ export async function POST(req: Request) {
       hunger: 80,
       energy: 80,
       vibe: 70,
-      placeId: "unity",
+      placeId: "home",
       lookId,
       gender,
       banned: false,
