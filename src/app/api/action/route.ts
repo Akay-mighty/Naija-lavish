@@ -15,7 +15,7 @@
 
 import { adminDb } from "@/lib/server/admin";
 import { requirePlayer, json, error } from "@/lib/server/guards";
-import { PLACE_BY_ID } from "@/game/data/places";
+import { PLACE_BY_ID_ALL as PLACE_BY_ID } from "@/game/data/places";
 import { ITEM_BY_ID } from "@/game/data/items";
 
 export const runtime = "nodejs";
@@ -40,14 +40,20 @@ export async function POST(req: Request) {
   const placeId: string = String(body.placeId || player.placeId);
   const amount: number = Math.max(0, Number(body.amount || 0));
 
-  // Validate place exists + matches player's current place
-  const place = PLACE_BY_ID[placeId];
-  if (!place) return error("Unknown place.", 400);
-  if (placeId !== player.placeId) return error("You must be at the place to act.", 400);
+  // Skip place validation for item buying/equipping (done from Phone Boutique, not a place)
+  const isItemAction = ["buy-item", "equip-item", "unequip-item"].includes(action);
+  const isBankAction = action === "bank";
 
-  // Find the action definition
-  const placeAction = place.actions.find((a) => a.id === actionId);
-  if (!placeAction) return error("Unknown action.", 400);
+  if (!isItemAction && !isBankAction) {
+    // Validate place exists + matches player's current place
+    const place = PLACE_BY_ID[placeId];
+    if (!place) return error("Unknown place.", 400);
+    if (placeId !== player.placeId) return error("You must be at the place to act.", 400);
+
+    // Find the action definition
+    const placeAction = place.actions.find((a) => a.id === actionId);
+    if (!placeAction) return error("Unknown action.", 400);
+  }
 
   // Apply inside a transaction
   try {
