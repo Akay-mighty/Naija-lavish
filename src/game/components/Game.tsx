@@ -89,9 +89,31 @@ export default function Game() {
   // Init RTDB presence
   useEffect(() => {
     if (!uid || soloMode) return;
-    initPresence(uid, name || "Player", usePlayer.getState().lookId, placeId);
+    const ps = usePlayer.getState();
+    const [cx, cz] = ps.characterPos ?? [0, 0];
+    initPresence(uid, name || "Player", ps.lookId, placeId, cx, cz, ps.characterFacing ?? 0);
     return () => { void clearPresence(uid); };
   }, [uid, name, soloMode]);
+
+  // Heartbeat: an idle player writes nothing, so without this everyone else drops them after
+  // a while. It also puts the player back if a network blip removed them (onDisconnect).
+  useEffect(() => {
+    if (!uid || soloMode) return;
+    const id = setInterval(() => {
+      const ps = usePlayer.getState();
+      const [cx, cz] = ps.characterPos ?? [0, 0];
+      void updatePresence(uid, {
+        uid,
+        name: ps.name || "Player",
+        lookId: ps.lookId,
+        placeId: ps.placeId,
+        x: cx,
+        z: cz,
+        ry: ps.characterFacing ?? 0,
+      });
+    }, 15_000);
+    return () => clearInterval(id);
+  }, [uid, soloMode]);
 
   // Update presence when placeId changes
   useEffect(() => {

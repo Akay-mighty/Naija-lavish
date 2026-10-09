@@ -276,20 +276,23 @@ export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
             lastPlaceSentRef.current = closest.id;
             setMoveChar(target.x, target.z, charRef.current.rotation.y);
             setPlaceRef(closest.id);
-            // RTDB presence update (placeId + position)
+            try {
+              window.dispatchEvent(new CustomEvent("naijalavish:arrive", { detail: { placeId: closest.id } }));
+            } catch (e) {
+              console.error("[Scene3D] arrival dispatch:", e);
+            }
+          }
+          // Always tell everyone where we stopped (also in the open street, not only at a place),
+          // otherwise other players see us frozen a few steps short, still "walking".
+          {
             const s = usePlayer.getState();
             const a = useAuth.getState();
             if (a.uid) {
               void dbWrite(dbRef(rtdb, `presence/${a.uid}`), {
                 uid: a.uid, name: s.name || "Player", lookId: s.lookId,
-                placeId: closest.id, x: target.x, z: target.z, ry: charRef.current.rotation.y,
+                placeId: s.placeId, x: target.x, z: target.z, ry: charRef.current.rotation.y,
                 anim: "idle", t: dbNow(),
               });
-            }
-            try {
-              window.dispatchEvent(new CustomEvent("naijalavish:arrive", { detail: { placeId: closest.id } }));
-            } catch (e) {
-              console.error("[Scene3D] arrival dispatch:", e);
             }
           }
           animateAvatar(avatarPartsRef.current, t, false, "idle");

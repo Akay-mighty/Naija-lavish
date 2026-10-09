@@ -46,6 +46,13 @@ function friendlyAuthError(msg?: string): string {
   if (m.includes("operation-not-allowed"))
     return "This sign-in method is switched off. In Firebase: Authentication → Sign-in method → enable it.";
   if (m.includes("network-request-failed")) return "No internet. Check your connection and try again.";
+  if (m.includes("email-already-in-use") || m.includes("credential-already-in-use"))
+    return "That email already has an account. Tap Log in and use your password.";
+  if (m.includes("invalid-credential") || m.includes("wrong-password") || m.includes("user-not-found") || m.includes("invalid-login"))
+    return "Wrong email or password. Check it and try again, or tap Forgot password.";
+  if (m.includes("invalid-email")) return "That email does not look right.";
+  if (m.includes("weak-password")) return "Password is too short. Use 6 or more characters.";
+  if (m.includes("too-many-requests")) return "Too many tries. Wait a few minutes, then try again.";
   return m || "Sign-in failed. Try again.";
 }
 
@@ -63,6 +70,9 @@ function GoogleIcon({ size = 18 }: { size?: number }) {
 export default function TitleScreen() {
   const signIn = useAuth((s) => s.signIn);
   const signInWithGoogle = useAuth((s) => s.signInWithGoogle);
+  const signInWithEmail = useAuth((s) => s.signInWithEmail);
+  const signUpWithEmail = useAuth((s) => s.signUpWithEmail);
+  const resetPassword = useAuth((s) => s.resetPassword);
   const getIdToken = useAuth((s) => s.getIdToken);
   const setScreen = usePlayer((s) => s.setScreen);
   const syncFromProfile = usePlayer((s) => s.syncFromProfile);
@@ -77,6 +87,10 @@ export default function TitleScreen() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [agreed, setAgreed] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [info, setInfo] = useState("");
 
   const looks = LOOKS.filter((l) => l.gender === gender);
   const age = calcAge(dob);
@@ -109,7 +123,7 @@ export default function TitleScreen() {
         // New player: we need the 18+ details first.
         if (!name.trim() || !dob || age < 18 || !agreed) {
           setTab("signup");
-          setError("Almost there! Fill your name and date of birth (18+), tick the box, then tap Sign up.");
+          setError("No player found for this Google account yet. Fill your name and date of birth (18+), tick the box, then tap Sign up.");
           if (!name.trim()) setName(useAuth.getState().user?.displayName?.split(" ")[0]?.slice(0, 16) || "");
           return;
         }
@@ -132,6 +146,49 @@ export default function TitleScreen() {
     }
   }
 
+  // ---- Email + password login ----
+  async function handleEmailLogin() {
+    setError("");
+    setInfo("");
+    sfx.play("click");
+    if (!email.trim() || !password) return setError("Enter your email and password.");
+    setEmailLoading(true);
+    try {
+      const r = await signInWithEmail(email.trim(), password);
+      if (!r.ok) {
+        setError(friendlyAuthError(r.error));
+        return;
+      }
+      const uid = useAuth.getState().uid;
+      if (!uid) throw new Error("Login failed. Try again.");
+
+      const profile = await loadProfile(uid);
+      if (!profile) {
+        // Signed in, but no player saved on this account yet (or the network is slow).
+        setTab("signup");
+        setError("You are logged in, but this account has no player yet. Fill your name and date of birth (18+), tick the box, then tap Sign up. If you already made a player, check your connection and log in again.");
+        if (!name.trim()) setName(email.split("@")[0].replace(/[^a-zA-Z0-9]/g, "").slice(0, 16));
+        return;
+      }
+      syncFromProfile(profile);
+      setScreen("game");
+      toast(`Welcome back, ${profile.name}!`, "success", "🎉");
+    } catch (e: any) {
+      setError(friendlyAuthError(e?.message));
+    } finally {
+      setEmailLoading(false);
+    }
+  }
+
+  async function handleForgotPassword() {
+    setError("");
+    setInfo("");
+    if (!email.trim()) return setError("Type your email above first, then tap Forgot password.");
+    const r = await resetPassword(email.trim());
+    if (!r.ok) return setError(friendlyAuthError(r.error));
+    setInfo("Reset link sent. Check your inbox (and spam) for an email from Firebase.");
+  }
+
   // ---- Guest / new account signup ----
   async function submitSignup() {
     setError("");
@@ -142,9 +199,18 @@ export default function TitleScreen() {
     if (username && !/^[a-z0-9_]+$/.test(username)) return setError("Username: letters, numbers, _ only.");
     if (username && username.length < 3) return setError("Username too short (3+).");
     if (!agreed) return setError("Tick the box to confirm you are 18+ and agree to the house rules.");
+    const wantsEmail = email.trim() !== "";
+    if (wantsEmail && !/^\S+@\S+\.\S+$/.test(email.trim())) return setError("That email does not look right.");
+    if (wantsEmail && password.length < 6) return setError("Password needs 6 or more characters.");
 
     setLoading(true);
     try {
+      // Email account (or guest upgraded to one). Skipped if a real account is already signed in.
+      const cur = useAuth.getState().user;
+      if (wantsEmail && !(cur && !cur.isAnonymous)) {
+        const r = await signUpWithEmail(email.trim(), password);
+        if (!r.ok) throw new Error(friendlyAuthError(r.error));
+      }
       await signIn(); // reuses an existing session (e.g. Google); otherwise creates a guest one
       const token = await getIdToken();
       if (!token) throw new Error("Could not sign you in. Check your internet and try again.");
@@ -206,7 +272,7 @@ export default function TitleScreen() {
         {/* Tabs */}
         <div className="flex gap-1 p-1 bg-secondary rounded-xl mb-4">
           <button
-            onClick={() => { sfx.play("click"); setTab("signup"); setError(""); }}
+            onClick={() => { sfx.play("click"); setTab("signup"); setError(""); setInfo(""); }}
             className={`flex-1 py-2 rounded-lg text-sm font-medium transition ${
               tab === "signup" ? "bg-card shadow-sm" : "text-foreground/60"
             }`}
@@ -214,7 +280,7 @@ export default function TitleScreen() {
             Create account
           </button>
           <button
-            onClick={() => { sfx.play("click"); setTab("login"); setError(""); }}
+            onClick={() => { sfx.play("click"); setTab("login"); setError(""); setInfo(""); }}
             className={`flex-1 py-2 rounded-lg text-sm font-medium transition ${
               tab === "login" ? "bg-card shadow-sm" : "text-foreground/60"
             }`}
@@ -233,8 +299,51 @@ export default function TitleScreen() {
               exit={{ opacity: 0, y: -6 }}
             >
               <p className="text-sm text-foreground/70 mb-4 leading-relaxed">
-                Sign in with Google to continue your hustle in Abuja. Your progress syncs across devices.
+                Log in to continue your hustle in Abuja. Your progress syncs across devices.
               </p>
+
+              <Field label="Email">
+                <input
+                  type="email"
+                  inputMode="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="nl-input"
+                  autoComplete="email"
+                  spellCheck={false}
+                />
+              </Field>
+              <Field label="Password">
+                <input
+                  type="password"
+                  placeholder="Your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleEmailLogin(); }}
+                  className="nl-input"
+                  autoComplete="current-password"
+                />
+              </Field>
+              <button
+                onClick={handleEmailLogin}
+                disabled={emailLoading || googleLoading}
+                className="big-btn disabled:opacity-50 mb-2"
+              >
+                {emailLoading ? "Logging in..." : "Log in →"}
+              </button>
+              <button
+                onClick={handleForgotPassword}
+                className="w-full text-xs text-foreground/60 hover:text-foreground underline underline-offset-4 mb-3"
+              >
+                Forgot password?
+              </button>
+
+              <div className="flex items-center gap-3 mb-3">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-xs text-foreground/40">or</span>
+                <div className="flex-1 h-px bg-border" />
+              </div>
 
               {/* Google sign-in button */}
               <button
@@ -249,13 +358,6 @@ export default function TitleScreen() {
                 </span>
               </button>
 
-              {/* Divider */}
-              <div className="flex items-center gap-3 my-4">
-                <div className="flex-1 h-px bg-border" />
-                <span className="text-xs text-foreground/40">or</span>
-                <div className="flex-1 h-px bg-border" />
-              </div>
-
               {/* Quick guest play */}
               <button
                 onClick={() => { sfx.play("click"); setTab("signup"); }}
@@ -264,6 +366,11 @@ export default function TitleScreen() {
                 New here? Create a free account →
               </button>
 
+              {info && (
+                <div className="text-sm text-primary bg-primary/10 px-3 py-2 rounded-lg mb-3" role="status">
+                  {info}
+                </div>
+              )}
               {error && (
                 <div className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg mb-3" role="alert">
                   {error}
@@ -298,7 +405,7 @@ export default function TitleScreen() {
               {/* Divider */}
               <div className="flex items-center gap-3 mb-4">
                 <div className="flex-1 h-px bg-border" />
-                <span className="text-xs text-foreground/40">or play as guest</span>
+                <span className="text-xs text-foreground/40">or fill in your details</span>
                 <div className="flex-1 h-px bg-border" />
               </div>
 
@@ -342,6 +449,31 @@ export default function TitleScreen() {
                   />
                 </div>
               </Field>
+
+              <Field label="Email (so you can log back in later)">
+                <input
+                  type="email"
+                  inputMode="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="nl-input"
+                  autoComplete="email"
+                  spellCheck={false}
+                />
+              </Field>
+              {email.trim() !== "" && (
+                <Field label="Password (6+ characters)">
+                  <input
+                    type="password"
+                    placeholder="Choose a password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="nl-input"
+                    autoComplete="new-password"
+                  />
+                </Field>
+              )}
 
               <p className="field-label">Man or woman? Then pick your look</p>
               <div className="grid grid-cols-2 gap-2 mb-3">
@@ -399,7 +531,9 @@ export default function TitleScreen() {
                 {loading ? "Loading..." : "Sign up · it's free →"}
               </button>
               <p className="text-[11px] text-foreground/40 text-center mt-3">
-                You&apos;ll be signed in anonymously. Your progress syncs to this device.
+                {email.trim()
+                  ? "Use this email and password to log in on any phone."
+                  : "No email? You play as a guest and your progress stays on this phone only."}
               </p>
             </motion.div>
           )}
