@@ -110,10 +110,12 @@ export function charactersLoaded(): boolean {
 }
 
 // ============================================================
-// CAR/TRUCK MODEL LOADER
+// CAR/TRUCK + INTERIOR PROPS
 // ============================================================
 
 let truckModel: THREE.Group | null = null;
+let dishwasherModel: THREE.Group | null = null;
+let stoveModel: THREE.Group | null = null;
 
 /** Load the truck/car model. Call once at game start. */
 export async function preloadCar(): Promise<void> {
@@ -128,4 +130,26 @@ export async function preloadCar(): Promise<void> {
 export function getTruckModel(): THREE.Group | null {
   if (!truckModel) return null;
   return cloneModel(truckModel);
+}
+
+/** Load interior prop models (dishwasher, stove). Call once at game start. */
+export async function preloadProps(): Promise<void> {
+  try {
+    const [d, s] = await Promise.all([
+      loadModel("/models/dishwasher.glb").catch(() => null),
+      loadModel("/models/stove.glb").catch(() => null),
+    ]);
+    dishwasherModel = d;
+    stoveModel = s;
+  } catch {
+    // Fallback to procedural
+  }
+}
+
+export function getDishwasherModel(): THREE.Group | null {
+  return dishwasherModel ? cloneModel(dishwasherModel) : null;
+}
+
+export function getStoveModel(): THREE.Group | null {
+  return stoveModel ? cloneModel(stoveModel) : null;
 }
