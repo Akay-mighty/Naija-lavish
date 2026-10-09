@@ -252,9 +252,13 @@ export default function PlaceSheet({ open, onClose, onWalkHere }: PlaceSheetProp
                           {owned ? (
                             <button
                               className="px-3 py-1.5 rounded-lg bg-secondary text-xs font-medium"
-                              onClick={() => {
-                                usePlayer.getState().equipItem(item.id);
-                                toast(`${item.name} equipped! ✨`, "success");
+                              onClick={async () => {
+                                sfx.play("click");
+                                const r = await callServer("equip-item", item.id);
+                                if (r.ok) {
+                                  usePlayer.getState().equipItem(item.id);
+                                  toast(`${item.name} equipped! ✨`, "success");
+                                }
                               }}
                             >
                               Equip
@@ -270,12 +274,21 @@ export default function PlaceSheet({ open, onClose, onWalkHere }: PlaceSheetProp
                                   ? "var(--primary-foreground)"
                                   : "var(--ink-3)",
                               }}
-                              disabled={!canAfford}
-                              onClick={() => {
-                                if (buyItem(item.id, item.price)) {
+                              disabled={!canAfford || busy}
+                              onClick={async () => {
+                                sfx.play("click");
+                                const r = await apiFetch("/api/action", {
+                                  method: "POST",
+                                  body: { action: "buy-item", actionId: "buy-item", itemId: item.id, itemPrice: item.price, placeId },
+                                  idToken,
+                                });
+                                if (r.ok && r.data?.ok) {
+                                  applyActionResult(r.data.result);
                                   toast(`Bought ${item.name}! ${item.emoji}`, "success");
+                                  sfx.play("cashSpend");
                                 } else {
-                                  toast("Not enough cash.", "warn", "💸");
+                                  toast(r.error || "Not enough cash.", "warn", "💸");
+                                  sfx.play("warn");
                                 }
                               }}
                             >
