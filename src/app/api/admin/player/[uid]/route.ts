@@ -55,6 +55,20 @@ export async function POST(req: Request, { params }: { params: { uid: string } }
           updates.banned = false;
           note = "Unbanned player";
           break;
+        case "suspend":
+          updates.banned = true;
+          (updates as any).suspendedReason = field || "Suspended by admin";
+          (updates as any).suspendedAt = Date.now();
+          note = `Suspended: ${field || "no reason given"}`;
+          break;
+        case "warn":
+          (updates as any).warnings = ((p as any).warnings || 0) + 1;
+          note = `Warning: ${field || "no reason given"}`;
+          break;
+        case "clearWarnings":
+          (updates as any).warnings = 0;
+          note = "Warnings cleared";
+          break;
         case "reset":
           updates.cash = 5000;
           updates.bank = 0;
