@@ -6,6 +6,10 @@ import {
   signInAnonymously,
   signInWithEmailAndPassword,
   signInWithPopup,
+  createUserWithEmailAndPassword,
+  linkWithCredential,
+  sendPasswordResetEmail,
+  EmailAuthProvider,
   GoogleAuthProvider,
   signOut as fbSignOut,
   type User,
@@ -30,6 +34,11 @@ interface AuthState {
   signIn: () => Promise<void>;
   signInWithGoogle: () => Promise<{ ok: boolean; error?: string }>;
   signInAdmin: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Player login with email + password. */
+  signInWithEmail: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Create an email account. A guest session is upgraded in place, so its progress is kept. */
+  signUpWithEmail: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  resetPassword: (email: string) => Promise<{ ok: boolean; error?: string }>;
   signOut: () => Promise<void>;
   getIdToken: () => Promise<string | null>;
   refresh: () => Promise<void>;
@@ -111,6 +120,62 @@ export const useAuth = create<AuthState>((set, get) => ({
       return { ok: true };
     } catch (e: any) {
       return { ok: false, error: e?.message || "Google sign-in failed." };
+    }
+  },
+
+  signInWithEmail: async (email, password) => {
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      const token = await cred.user.getIdToken();
+      set({
+        status: "player",
+        user: cred.user,
+        uid: cred.user.uid,
+        idToken: token,
+        soloMode: false,
+        error: null,
+      });
+      watchProfile(cred.user.uid);
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, error: e?.message || "Login failed." };
+    }
+  },
+
+  signUpWithEmail: async (email, password) => {
+    try {
+      const current = auth.currentUser;
+      let user: User;
+      if (current && current.isAnonymous) {
+        // Turn the guest into an email account: same uid, so nothing is lost.
+        user = (await linkWithCredential(current, EmailAuthProvider.credential(email, password))).user;
+      } else if (current) {
+        return { ok: false, error: "You are already signed in. Log out first to make a different account." };
+      } else {
+        user = (await createUserWithEmailAndPassword(auth, email, password)).user;
+      }
+      const token = await user.getIdToken(true);
+      set({
+        status: "player",
+        user,
+        uid: user.uid,
+        idToken: token,
+        soloMode: false,
+        error: null,
+      });
+      watchProfile(user.uid);
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, error: e?.message || "Could not create the account." };
+    }
+  },
+
+  resetPassword: async (email) => {
+    try {
+      await sendPasswordResetEmail(auth, email);
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, error: e?.message || "Could not send the reset email." };
     }
   },
 
