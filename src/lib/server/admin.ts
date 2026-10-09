@@ -13,11 +13,13 @@ import { serviceAccount } from "./serviceAccount";
 let adminApp: AdminApp | null = null;
 let initError: string | null = null;
 
-/** Check if the service account is still the placeholder. */
+/** Check if the service account is still the placeholder or invalid. */
 function isPlaceholder(): boolean {
   return (
     !serviceAccount.private_key ||
+    serviceAccount.private_key.length < 100 ||
     serviceAccount.private_key.includes("REPLACE_WITH") ||
+    serviceAccount.private_key.includes("REDACTED") ||
     !serviceAccount.project_id ||
     serviceAccount.project_id === "REPLACE_WITH_YOUR_PROJECT_ID" ||
     serviceAccount.private_key_id === "REPLACE_WITH_YOUR_PRIVATE_KEY_ID"
