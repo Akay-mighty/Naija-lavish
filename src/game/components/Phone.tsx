@@ -34,6 +34,18 @@ export default function Phone({ onClose }: { onClose: () => void }) {
   return (
     <motion.div
       className="phone-shell"
+      // framer-motion writes its own inline `transform`, which wiped out the CSS
+      // `translateX(-50%)` and pushed the phone half off-screen. So we centre it
+      // with left/right + auto margins (no transform) and let it scroll if tall.
+      style={{
+        left: 0,
+        right: 0,
+        marginLeft: "auto",
+        marginRight: "auto",
+        maxHeight: "85dvh",
+        overflowY: "auto",
+        paddingBottom: "calc(22px + env(safe-area-inset-bottom))",
+      }}
       initial={{ y: "100%" }}
       animate={{ y: 0 }}
       exit={{ y: "100%" }}
@@ -121,7 +133,7 @@ function PhoneApp({ app }: { app: App }) {
 function GistApp() {
   const chat = usePlayer((s) => s.chat);
   return (
-    <div className="overflow-y-auto no-scrollbar">
+    <div>
       <h3 className="font-semibold text-white mb-2">Gist</h3>
       <ul className="flex flex-col gap-1.5">
         {chat.slice(-30).map((m) => (
