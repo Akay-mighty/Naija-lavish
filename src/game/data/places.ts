@@ -437,5 +437,119 @@ export const PLACE_BY_ID: Record<string, Place> = Object.fromEntries(
   PLACES.map((p) => [p.id, p])
 );
 
-// Default starting place (Unity Fountain — center of the city)
+// Default starting place (player's house)
 export const START_PLACE_ID = "home";
+
+// ============================================================
+// KADUNA — second city (6 places)
+// ============================================================
+
+export const KADUNA_PLACES: Place[] = [
+  {
+    id: "kd-murtala-square",
+    name: "Murtala Square",
+    area: "Kaduna Central",
+    category: "rest",
+    ambience: "Open field, kids playing football, kites flying.",
+    blurb: "The heart of Kaduna — a big open square where families gather on weekends. Food sellers, balloon vendors, and the occasional political rally.",
+    pos: [0, 0],
+    color: "#22c55e",
+    accent: "#bbf7d0",
+    actions: [
+      { id: "sit", label: "Sit & relax", kind: "rest", energyCost: 0, vibeGain: 25, reward: 0, desc: "Free bench, free breeze, free vibe." },
+    ],
+  },
+  {
+    id: "kd-ahmadu-bello-way",
+    name: "Ahmadu Bello Way",
+    area: "Kaduna Central",
+    category: "work",
+    ambience: "Busy roundabout, okada revving, suya smoke.",
+    blurb: "The main drag of Kaduna. Okada riders, suya sellers, banks, and offices. Best hustle spot in the city.",
+    pos: [-8, 4],
+    color: "#f59e0b",
+    accent: "#fde68a",
+    actions: [
+      { id: "okada", label: "Ride okada", kind: "work", reward: 1000, energyCost: 12, hungerCost: 3, vibeCost: 2, cooldownSec: 35, desc: "Carry passengers across Kaduna. Fast naira." },
+      { id: "suya", label: "Sell suya", kind: "work", reward: 2000, energyCost: 15, hungerCost: 3, vibeCost: 2, cooldownSec: 50, desc: "Night market hustle. Smoky, loud, lucrative." },
+    ],
+  },
+  {
+    id: "kd-nasarawa-market",
+    name: "Nasarawa Market",
+    area: "Nasarawa",
+    category: "market",
+    ambience: "Crowded stalls, haggling voices, spice smell.",
+    blurb: "The biggest market in Kaduna North. Everything from tomatoes to electronics. Roast bole by the gate.",
+    pos: [6, 6],
+    color: "#10b981",
+    accent: "#a7f3d0",
+    actions: [
+      { id: "bole", label: "Roast & sell bole", kind: "work", reward: 750, energyCost: 8, hungerCost: 2, vibeCost: 1, cooldownSec: 25, desc: "Roast plantain over charcoal. Quick steady money." },
+      { id: "buy-food", label: "Buy foodstuff", kind: "buy", reward: -600, hungerCost: 0, vibeGain: 25, desc: "Stock up rice, beans, plantain. Belle fills, wallet trims." },
+    ],
+  },
+  {
+    id: "kd-lugard-hall",
+    name: "Lugard Hall",
+    area: "Kaduna Central",
+    category: "work",
+    ambience: "Colonial-era building, government offices, convoys.",
+    blurb: "The old colonial administrative building. Now houses government offices. Office shifts pay well.",
+    pos: [4, -4],
+    color: "#6366f1",
+    accent: "#c7d2fe",
+    actions: [
+      { id: "office", label: "Office shift", kind: "work", reward: 2500, energyCost: 10, hungerCost: 2, vibeCost: 2, cooldownSec: 60, desc: "Sit-down AC job. Brain work, body cool." },
+    ],
+  },
+  {
+    id: "kd-ranch",
+    name: "Kaduna Ranch",
+    area: "Kaduna South",
+    category: "rest",
+    ambience: "Open fields, cattle grazing, fresh air.",
+    blurb: "Green ranch land on the outskirts of Kaduna. Horses, cattle, and the freshest air in the north.",
+    pos: [-14, -8],
+    color: "#84cc16",
+    accent: "#d9f99d",
+    actions: [
+      { id: "stroll", label: "Stroll the ranch", kind: "rest", energyCost: 3, vibeGain: 40, reward: 0, desc: "Walk among the cattle. Peace like nothing else." },
+      { id: "ride-horse", label: "Horse ride (₦1,000)", kind: "rest", reward: -1000, energyCost: 5, vibeGain: 50, desc: "Rent a horse for 30 min. Worth every naira." },
+    ],
+  },
+  {
+    id: "kd-galaxy-nightclub",
+    name: "Galaxy Nightclub",
+    area: "Kaduna South",
+    category: "social",
+    ambience: "Neon lights, bass shaking, bottles popping.",
+    blurb: "The hottest owambe spot in Kaduna. DJs spin afrobeats till 4 AM. Spray money, dance, flex.",
+    pos: [10, -8],
+    color: "#d946ef",
+    accent: "#f5d0fe",
+    actions: [
+      { id: "spray-200", label: "Spray ₦200", kind: "spray", reward: -200, vibeGain: 30, desc: "Make it rain small. Crowd cheers." },
+      { id: "spray-1000", label: "Spray ₦1,000 bundle", kind: "spray", reward: -1000, vibeGain: 70, desc: "Big bundle, big flex. Your name rings tonight." },
+      { id: "dance", label: "Dance to afrobeats", kind: "rest", energyCost: 6, vibeGain: 50, reward: 0, desc: "Burna Boy on the speakers. Body no dey lie." },
+    ],
+  },
+];
+
+export const ALL_PLACES: Place[] = [...PLACES, ...KADUNA_PLACES];
+
+// Re-build PLACE_BY_ID to include Kaduna
+export const PLACE_BY_ID_ALL: Record<string, Place> = Object.fromEntries(
+  ALL_PLACES.map((p) => [p.id, p])
+);
+
+export type CityId = "abuja" | "kaduna";
+
+export const CITIES: Array<{ id: CityId; name: string; emoji: string }> = [
+  { id: "abuja", name: "Abuja", emoji: "🏛️" },
+  { id: "kaduna", name: "Kaduna", emoji: "🌅" },
+];
+
+export function getPlacesByCity(city: CityId): Place[] {
+  return city === "kaduna" ? KADUNA_PLACES : PLACES;
+}
