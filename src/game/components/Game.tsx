@@ -75,6 +75,7 @@ export default function Game() {
   const [sheetPlaceId, setSheetPlaceId] = useState<string>(placeId);
   const [targetPlaceId, setTargetPlaceId] = useState<string | null>(null);
   const [hideUI, setHideUI] = useState(false);
+  const [interior, setInterior] = useState<"home" | "owambe" | null>(null);
 
   // Sync player store from Firestore profile (server is source of truth)
   useEffect(() => {
@@ -181,6 +182,29 @@ export default function Game() {
     return () => window.removeEventListener("naijalavish:arrive", handler as EventListener);
   }, [setPlace]);
 
+  // Enter / Exit interior events (from PlaceSheet buttons)
+  useEffect(() => {
+    const enterHandler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { placeId: string };
+      if (detail.placeId === "home") {
+        setInterior("home");
+        setSheet(null);
+      } else if (detail.placeId === "transcorp" || detail.placeId === "magicland") {
+        setInterior("owambe");
+        setSheet(null);
+      }
+    };
+    const exitHandler = () => {
+      setInterior(null);
+    };
+    window.addEventListener("naijalavish:enter-interior", enterHandler as EventListener);
+    window.addEventListener("naijalavish:exit-interior", exitHandler as EventListener);
+    return () => {
+      window.removeEventListener("naijalavish:enter-interior", enterHandler as EventListener);
+      window.removeEventListener("naijalavish:exit-interior", exitHandler as EventListener);
+    };
+  }, []);
+
   // Sync sheet place with current place
   useEffect(() => { setSheetPlaceId(placeId); }, [placeId]);
 
@@ -227,7 +251,7 @@ export default function Game() {
       className="relative w-full overflow-hidden"
       style={{ height: "100dvh", background: "#eef7f1" }}
     >
-      <Scene3D targetPlaceId={targetPlaceId} />
+      <Scene3D targetPlaceId={targetPlaceId} interior={interior} />
 
       {/* Top right: real online count only */}
       <div className="absolute top-3 right-3 z-20 flex flex-col items-end gap-2">
@@ -266,6 +290,20 @@ export default function Game() {
           aria-label="Show UI"
         >
           👁 Show UI
+        </button>
+      )}
+
+      {/* Exit Interior button — visible when inside an interior */}
+      {interior && (
+        <button
+          onClick={() => {
+            sfx.play("click");
+            window.dispatchEvent(new CustomEvent("naijalavish:exit-interior"));
+          }}
+          className="fixed top-3 right-3 z-40 panel px-3 py-2 text-xs font-medium"
+          style={{ background: "rgba(15, 28, 22, 0.85)", color: "#fff", borderRadius: 999 }}
+        >
+          ← Exit to city
         </button>
       )}
     </main>

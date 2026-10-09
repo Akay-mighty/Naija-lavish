@@ -18,14 +18,17 @@ import { buildPlace } from "../three/city";
 import { buildGround, buildInstancedProps, buildBillboards, buildAmbientTraffic, type TrafficSystem } from "../three/props";
 import { RemotePlayers } from "../three/remotePlayers";
 import { QUALITY_CONFIG, loadQuality, FpsMonitor, type Quality } from "../three/quality";
+import { buildHomeInterior, buildOwambeInterior, createSprayEffect, type SprayEffect } from "../three/interiors";
 
 interface Scene3DProps {
   targetPlaceId: string | null;
+  /** When set, switch to interior view ("home" or "owambe"). null = city view. */
+  interior: "home" | "owambe" | null;
 }
 
 const BOUNDS = { minX: -22, maxX: 22, minZ: -16, maxZ: 16 };
 
-export default function Scene3D({ targetPlaceId }: Scene3DProps) {
+export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -46,6 +49,12 @@ export default function Scene3D({ targetPlaceId }: Scene3DProps) {
   const cameraDistanceRef = useRef<number>(18);
   const cameraAngleRef = useRef<number>(0); // azimuth
   const pinchStartRef = useRef<{ dist: number; zoom: number } | null>(null);
+  // Interior refs
+  const interiorGroupRef = useRef<THREE.Group | null>(null);
+  const cityGroupRef = useRef<THREE.Group | null>(null);
+  const interiorModeRef = useRef<"home" | "owambe" | null>(null);
+  // Spray effect (naira notes raining down)
+  const sprayEffectRef = useRef<SprayEffect | null>(null);
   const setMoveChar = useRef(usePlayer.getState().moveCharacter).current;
   const setPlaceRef = useRef(usePlayer.getState().setPlace).current;
   const lastPlaceSentRef = useRef<string | null>(null);
@@ -166,6 +175,18 @@ export default function Scene3D({ targetPlaceId }: Scene3DProps) {
 
     // ---- Remote players ----
     remotePlayersRef.current = new RemotePlayers(scene, "city");
+
+    // ---- Spray effect (naira notes raining down) ----
+    const spray = createSprayEffect();
+    scene.add(spray.group);
+    sprayEffectRef.current = spray;
+
+    // Listen for spray events (from PlaceSheet)
+    const onSpray = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { amount: number };
+      spray.trigger(detail.amount);
+    };
+    window.addEventListener("naijalavish:spray", onSpray as EventListener);
 
     // ---- Day/night cycle helper ----
     function paramsForHour(hour: number) {
@@ -361,6 +382,9 @@ export default function Scene3D({ targetPlaceId }: Scene3DProps) {
       // Remote players
       remotePlayersRef.current?.update(t);
 
+      // Spray effect (naira notes)
+      sprayEffectRef.current?.update(dt, t);
+
       renderer.render(scene, camera);
       rafRef.current = requestAnimationFrame(animate);
     };
@@ -468,8 +492,10 @@ export default function Scene3D({ targetPlaceId }: Scene3DProps) {
       renderer.domElement.removeEventListener("touchstart", onTouchStart);
       renderer.domElement.removeEventListener("touchmove", onTouchMove);
       renderer.domElement.removeEventListener("wheel", onWheel);
+      window.removeEventListener("naijalavish:spray", onSpray as EventListener);
       remotePlayersRef.current?.dispose();
       trafficRef.current?.dispose();
+      sprayEffectRef.current?.dispose();
       renderer.dispose();
       if (renderer.domElement.parentElement === mount) {
         mount.removeChild(renderer.domElement);
@@ -492,6 +518,47 @@ export default function Scene3D({ targetPlaceId }: Scene3DProps) {
       walkTargetRef.current = new THREE.Vector3(pos.x, 0, pos.z + 2.2);
     }
   }, [targetPlaceId]);
+
+  // ---- Interior mode switch ----
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    // If same mode, do nothing
+    if (interiorModeRef.current === interior) return;
+    interiorModeRef.current = interior;
+
+    // Remove existing interior group
+    if (interiorGroupRef.current) {
+      scene.remove(interiorGroupRef.current);
+      interiorGroupRef.current = null;
+    }
+
+    if (interior) {
+      // Hide city (all place markers + ground + props)
+      Object.values(markersRef.current).forEach((g) => { g.visible = false; });
+      // Build + add interior
+      if (interior === "home") {
+        interiorGroupRef.current = buildHomeInterior();
+      } else if (interior === "owambe") {
+        interiorGroupRef.current = buildOwambeInterior();
+      }
+      if (interiorGroupRef.current) {
+        scene.add(interiorGroupRef.current);
+      }
+      // Move camera closer for interior
+      cameraDistanceRef.current = 10;
+      // Position character in room center
+      if (charRef.current) {
+        charRef.current.position.set(0, 0, 1);
+        walkTargetRef.current = null;
+      }
+    } else {
+      // Show city again
+      Object.values(markersRef.current).forEach((g) => { g.visible = true; });
+      cameraDistanceRef.current = 18;
+    }
+  }, [interior]);
 
   // ---- Update avatar look when player lookId changes ----
   const lookId = usePlayer((s) => s.lookId);

@@ -112,6 +112,8 @@ export default function PlaceSheet({ open, onClose, onWalkHere }: PlaceSheetProp
         applyActionResult(r.result);
         toast(`Sprayed ${naira(amount)} at the dance floor! 🎉`, "success", "💵");
         sfx.play("spray");
+        // Trigger naira note rain effect in Scene3D
+        window.dispatchEvent(new CustomEvent("naijalavish:spray", { detail: { amount } }));
       } else if (a.kind === "rest") {
         const r = await callServer("rest", a.id);
         if (!r.ok) {
@@ -191,6 +193,22 @@ export default function PlaceSheet({ open, onClose, onWalkHere }: PlaceSheetProp
                   }}
                 >
                   🚶 Walk here
+                </button>
+              )}
+
+              {/* Enter Interior button (home / owambe) */}
+              {(place.id === "home" || place.id === "transcorp" || place.id === "magicland") && (
+                <button
+                  type="button"
+                  className="big-btn mb-3"
+                  onClick={() => {
+                    sfx.play("click");
+                    window.dispatchEvent(
+                      new CustomEvent("naijalavish:enter-interior", { detail: { placeId: place.id } })
+                    );
+                  }}
+                >
+                  {place.id === "home" ? "🏠 Enter your house" : "🎉 Enter the hall"}
                 </button>
               )}
 
