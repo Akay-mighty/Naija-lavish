@@ -438,4 +438,4 @@ export const PLACE_BY_ID: Record<string, Place> = Object.fromEntries(
 );
 
 // Default starting place (Unity Fountain — center of the city)
-export const START_PLACE_ID = "unity";
+export const START_PLACE_ID = "home";
