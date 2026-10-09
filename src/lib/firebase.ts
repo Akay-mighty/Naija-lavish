@@ -3,7 +3,7 @@
 // Realtime Database URL is required for presence + positions (Phase 2).
 
 import { getApps, initializeApp, getApp } from "firebase/app";
-import { getAuth, indexedDBLocalPersistence, setPersistence, browserLocalPersistence } from "firebase/auth";
+import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getDatabase } from "firebase/database";
 
@@ -21,12 +21,10 @@ const firebaseConfig = {
 // HMR-safe init
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 
-// Auth (anonymous sign-in for players, email/password for admin)
+// Auth. getAuth() already keeps the player signed in across reloads
+// (IndexedDB, falling back to localStorage). Do NOT call setPersistence() here:
+// switching storage right after startup can race with session restore and log players out.
 export const auth = getAuth(app);
-// Use local persistence so players stay signed in across reloads
-if (typeof window !== "undefined") {
-  setPersistence(auth, browserLocalPersistence).catch(() => {});
-}
 
 // Firestore (chat log, player profiles, admin docs, audit trail)
 export const db = getFirestore(app);
