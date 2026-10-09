@@ -64,6 +64,14 @@ export default function Game() {
   const setPlace = usePlayer((s) => s.setPlace);
   const advanceHour = usePlayer((s) => s.advanceHour);
 
+  // Preload 3D character models (male + female GLB) on game mount
+  useEffect(() => {
+    void import("../three/models").then((m) => {
+      m.preloadCharacters().catch(() => {});
+      m.preloadCar().catch(() => {});
+    });
+  }, []);
+
   // The open sheet lives in the URL (#game/map ...) so the phone's Back button closes it
   // instead of leaving the game.
   const route = useRoute();
