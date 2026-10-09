@@ -63,6 +63,13 @@ export async function POST(req: Request) {
 
     step = "write-profile";
     const now = Date.now();
+    // Assign unique house position based on UID hash (spread around the map edge)
+    const uidHash = uid.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+    const houseAngle = ((uidHash % 360) * Math.PI) / 180;
+    const houseRadius = 18 + (uidHash % 4); // 18-22 units from center
+    const houseX = Math.round(Math.cos(houseAngle) * houseRadius);
+    const houseZ = Math.round(Math.sin(houseAngle) * houseRadius);
+
     const profile = {
       uid,
       name,
@@ -84,6 +91,8 @@ export async function POST(req: Request) {
       createdAt: now,
       lastSeen: now,
       quest: { step: 0, completed: [] as string[] },
+      housePos: [houseX, houseZ] as [number, number],
+      houseCity: "abuja",
     };
     await withTimeout(ref.set(profile), 15000, "Saving your profile");
     return reply({ ok: true, player: profile });
