@@ -1,9 +1,11 @@
 // Shared avatar factory — used by both local + remote players.
-// Builds a low-poly humanoid from grouped primitives (no GLB).
+// Tries to load GLB models (from /models/male.glb, /models/female.glb).
+// Falls back to procedural primitives if GLB not loaded yet.
 
 import * as THREE from "three";
 import { hexToInt } from "../lib/format";
 import type { Look } from "../data/items";
+import { getCharacterModel } from "./models";
 
 export interface AvatarParts {
   group: THREE.Group;
@@ -14,10 +16,53 @@ export interface AvatarParts {
   armL: THREE.Mesh;
   armR: THREE.Mesh;
   hair?: THREE.Mesh;
+  isGLB: boolean;
 }
 
-/** Build an avatar from a Look. Reusable for local + N remote players. */
+/** Build an avatar from a Look. Uses GLB model if loaded, else procedural. */
 export function buildAvatar(look: Look): AvatarParts {
+  // Try GLB model first
+  const glbModel = getCharacterModel(look.gender);
+  if (glbModel) {
+    return buildFromGLB(glbModel, look);
+  }
+  return buildProcedural(look);
+}
+
+/** Build from a loaded GLB model. Applies look-based coloring. */
+function buildFromGLB(model: THREE.Group, look: Look): AvatarParts {
+  const group = model;
+  // Find key parts for animation
+  let head = new THREE.Mesh();
+  let body = new THREE.Mesh();
+  let legL = new THREE.Mesh();
+  let legR = new THREE.Mesh();
+  let armL = new THREE.Mesh();
+  let armR = new THREE.Mesh();
+
+  group.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (mesh.isMesh) {
+      const name = mesh.name.toLowerCase();
+      // Try to identify parts by name
+      if (name.includes("head") && !head.geometry) head = mesh;
+      else if (name.includes("body") || name.includes("torso")) body = mesh;
+      else if (name.includes("leg") && name.includes("l")) legL = mesh;
+      else if (name.includes("leg") && name.includes("r")) legR = mesh;
+      else if (name.includes("arm") && name.includes("l")) armL = mesh;
+      else if (name.includes("arm") && name.includes("r")) armR = mesh;
+      else if (!head.geometry && !body.geometry) head = mesh; // fallback
+    }
+  });
+
+  // If no parts found, use the whole model for animation
+  if (!body.geometry) body = head;
+
+  return { group, head, body, legL, legR, armL, armR, isGLB: true };
+}
+
+/** Build procedural avatar (fallback when GLB not loaded). */
+function buildProcedural(look: Look): AvatarParts {
   const group = new THREE.Group();
 
   const skinMat = new THREE.MeshStandardMaterial({ color: hexToInt(look.skin), roughness: 0.75 });
@@ -81,7 +126,7 @@ export function buildAvatar(look: Look): AvatarParts {
   shadow.position.y = 0.02;
   group.add(shadow);
 
-  return { group, head, body, legL, legR, armL, armR, hair };
+  return { group, head, body, legL, legR, armL, armR, hair, isGLB: false };
 }
 
 /** Update avatar animation given a phase (seconds) + walking flag. */
