@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { usePlayer } from "@/game/store/usePlayer";
 import { useAuth } from "@/game/store/useAuth";
+import { go, readRoute, subscribe } from "@/game/lib/nav";
 import Landing from "@/game/components/Landing";
 import TitleScreen from "@/game/components/TitleScreen";
 import Game from "@/game/components/Game";
@@ -31,70 +32,88 @@ function Splash() {
   );
 }
 
+/** Signed in AND has a player profile (from the server, or saved on this phone for the same account). */
+function canPlay(): boolean {
+  const a = useAuth.getState();
+  const p = usePlayer.getState();
+  return !!a.uid && (a.isPlayer || (p.uid === a.uid && !!p.name));
+}
+
 function AppContent() {
   const sp = useSearchParams();
   const isAdmin = sp.get("admin") === "1";
   const screen = usePlayer((s) => s.screen);
   const hydrate = usePlayer.persist.hasHydrated();
-  const authStatus = useAuth((s) => s.status);
+  const authReady = useAuth((s) => s.authReady);
   const uid = useAuth((s) => s.uid);
-  const isPlayer = useAuth((s) => s.isPlayer);
 
-  // Auto-route returning authenticated players (Google or anon with profile) straight to game
+  const bootedRef = useRef(false);
+  const [booted, setBooted] = useState(false);
+
+  // 1) BOOT — runs once, after Firebase has restored the saved login.
+  //    Returning player  -> straight into the game (Back goes to the landing page).
+  //    Everyone else     -> landing / sign-up as the URL says.
   useEffect(() => {
-    if (uid && isPlayer && screen === "landing") {
-      usePlayer.setState({ screen: "game" });
-    }
-  }, [uid, isPlayer, screen]);
+    if (isAdmin || bootedRef.current || !hydrate || !authReady) return;
+    bootedRef.current = true;
 
-  // Re-hydrate on focus
+    const route = readRoute();
+    if (canPlay()) {
+      if (route.screen === "landing") go({ screen: "game", sheet: null }, "push"); // [landing, game]
+      else if (route.screen === "title") go({ screen: "game", sheet: null }, "replace");
+      usePlayer.setState({ screen: "game" });
+    } else {
+      if (route.screen === "game") go({ screen: "landing", sheet: null }, "replace");
+      usePlayer.setState({ screen: route.screen === "title" ? "title" : "landing" });
+    }
+    setBooted(true);
+  }, [isAdmin, hydrate, authReady]);
+
+  // 2) KEEP THE URL AND THE SCREEN IN SYNC (so Back / Forward / refresh behave)
+  useEffect(() => {
+    // screen changed in the app -> update the URL
+    const unsubStore = usePlayer.subscribe((s, prev) => {
+      if (!bootedRef.current || s.screen === prev.screen) return;
+      if (readRoute().screen === s.screen) return; // the URL already says this
+      const replace =
+        (prev.screen === "title" && s.screen === "game") || // don't let Back return to the sign-up form
+        (prev.screen === "game" && s.screen === "landing"); // logout
+      go({ screen: s.screen, sheet: null }, replace ? "replace" : "push");
+    });
+
+    // URL changed (Back / Forward button) -> update the screen
+    const onNav = () => {
+      if (!bootedRef.current) return;
+      let target = readRoute().screen;
+      if (target === "game" && !canPlay()) {
+        go({ screen: "landing", sheet: null }, "replace"); // not signed in: can't enter the city
+        target = "landing";
+      }
+      if (usePlayer.getState().screen !== target) usePlayer.setState({ screen: target });
+    };
+    const unsubNav = subscribe(onNav);
+
+    return () => {
+      unsubStore();
+      unsubNav();
+    };
+  }, []);
+
+  // Re-hydrate on focus (another tab may have changed the saved player)
   useEffect(() => {
     const onFocus = () => usePlayer.persist.rehydrate();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
-  // In-app back navigation: when user presses hardware/browser Back button,
-  // intercept it and route to the previous in-app screen instead of exiting.
-  useEffect(() => {
-    const onPopState = (e: PopStateEvent) => {
-      const cur = usePlayer.getState();
-      if (cur.screen === "game") {
-        // From game → go to title (not exit site)
-        usePlayer.setState({ screen: "title" });
-        // Push state again so back button keeps working
-        window.history.pushState({ app: "title" }, "");
-      } else if (cur.screen === "title") {
-        // From title → go to landing
-        usePlayer.setState({ screen: "landing" });
-        window.history.pushState({ app: "landing" }, "");
-      } else {
-        // On landing — allow normal back (exit site)
-      }
-    };
-    // Push an initial state so we have something to pop
-    window.history.pushState({ app: "init" }, "");
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
-
-  // Push history state when screen changes (so back button works in-app)
-  useEffect(() => {
-    if (screen === "game" || screen === "title") {
-      window.history.pushState({ app: screen }, "");
-    }
-  }, [screen]);
-
-  // Admin route: bypass game entirely
+  // Admin route: bypass the game entirely
   if (isAdmin) return <AdminDashboard />;
 
-  if (!hydrate || authStatus === "loading") return <Splash />;
+  // Wait for the saved login to be restored before showing anything (no flash of the landing page)
+  if (!hydrate || !authReady || !booted) return <Splash />;
 
-  // If we have a uid AND a player profile exists, go straight to game
-  if (uid && authStatus === "player" && screen === "game") return <Game />;
-  if (screen === "landing") return <Landing />;
-  if (screen === "title")  return <TitleScreen />;
-  if (screen === "game" && (uid || authStatus === "anon")) return <Game />;
+  if (screen === "game" && uid) return <Game />;
+  if (screen === "title") return <TitleScreen />;
   return <Landing />;
 }
 
