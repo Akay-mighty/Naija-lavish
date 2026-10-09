@@ -98,6 +98,41 @@ export async function POST(req: Request) {
           if (placeAction.hungerCost) updates.hunger = clamp(p.hunger - placeAction.hungerCost);
           return { kind: "buy", cost, cash: updates.cash ?? p.cash };
         }
+        case "buy-item": {
+          // Buy an item from the boutique: deduct cash + add to inventory server-side
+          const itemId = String(body.itemId || "");
+          if (!itemId) throw new Error("Item ID required.");
+          const itemPrice = Number(body.itemPrice || 0);
+          if (itemPrice <= 0) throw new Error("Invalid item price.");
+          if (p.cash < itemPrice) throw new Error("Not enough cash.");
+          // Check if already owned
+          const inv = (p as any).inventory || [];
+          if (inv.some((i: any) => i.id === itemId)) {
+            return { kind: "buy-item", alreadyOwned: true, cash: p.cash };
+          }
+          updates.cash = p.cash - itemPrice;
+          updates.spentTotal = (p.spentTotal || 0) + itemPrice;
+          (updates as any).inventory = [...inv, { id: itemId, equipped: false, acquiredAt: now }];
+          return { kind: "buy-item", itemId, cash: updates.cash };
+        }
+        case "equip-item": {
+          const itemId = String(body.itemId || "");
+          if (!itemId) throw new Error("Item ID required.");
+          const inv = (p as any).inventory || [];
+          (updates as any).inventory = inv.map((i: any) =>
+            i.id === itemId ? { ...i, equipped: true } : i
+          );
+          return { kind: "equip-item", itemId };
+        }
+        case "unequip-item": {
+          const itemId = String(body.itemId || "");
+          if (!itemId) throw new Error("Item ID required.");
+          const inv = (p as any).inventory || [];
+          (updates as any).inventory = inv.map((i: any) =>
+            i.id === itemId ? { ...i, equipped: false } : i
+          );
+          return { kind: "unequip-item", itemId };
+        }
         case "spray": {
           if (placeAction.kind !== "spray") throw new Error("Not a spray action.");
           const sprayAmount = Math.abs(placeAction.reward ?? amount);
