@@ -105,20 +105,19 @@ export default function AdminDashboard() {
       return;
     }
     setError("");
+    console.log("[admin] action:", action, "player.id:", player.id, "amount:", amount);
     const r = await apiFetch(`/api/admin/player/${player.id}`, {
       method: "POST",
       body: { action, field, amount },
       idToken,
     });
+    console.log("[admin] response:", r);
     if (!r.ok || !r.data?.ok) {
-      setError(r.error || "Action failed.");
+      setError(r.error || `Action failed (status ${r.status}). Player ID: ${player.id}`);
     } else {
-      // Success — show feedback + refresh player list
       const note = r.data?.result?.note || action;
       setSuccessMsg(`${note} — ${player.name}`);
-      // Force refresh by toggling a state
       setRefreshKey((k) => k + 1);
-      // Clear success after 3s
       setTimeout(() => setSuccessMsg(""), 3000);
     }
   }
