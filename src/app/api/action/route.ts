@@ -114,7 +114,9 @@ export async function POST(req: Request) {
           tx.set(evRef, {
             uid, name: p.name, amount: sprayAmount, t: now,
           });
-          return { kind: "spray", amount: sprayAmount, cash: updates.cash };
+          // Increment community spray counter (RTDB)
+          // This can't be done inside a Firestore transaction, so we do it after
+          return { kind: "spray", amount: sprayAmount, cash: updates.cash, communitySpray: true };
         }
         case "bank": {
           // actionId = "deposit" or "withdraw"
@@ -152,6 +154,24 @@ export async function POST(req: Request) {
           throw new Error(`Unknown action type: ${action}`);
       }
     });
+
+    // Increment community spray counter in RTDB (after transaction, not inside it)
+    if ((result as any)?.communitySpray) {
+      try {
+        const { getDatabase } = await import("firebase-admin/database");
+        const rtdb = getDatabase();
+        const snap = await rtdb.ref("community/spraysToday").get();
+        const cur = snap.val() || 0;
+        await rtdb.ref("community/spraysToday").set(cur + 1);
+        // Check if goal reached → pay everyone ₦1,000 (simplified: just reset counter)
+        if (cur + 1 >= 100) {
+          await rtdb.ref("community/spraysToday").set(0);
+          await rtdb.ref("community/lastGoalMet").set(Date.now());
+        }
+      } catch (e) {
+        // Non-critical — don't fail the action
+      }
+    }
 
     return json({ ok: true, result });
   } catch (e: any) {
