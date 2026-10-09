@@ -15,12 +15,22 @@ export async function POST(req: Request, { params }: { params: { uid: string } }
   const adminUid = guard.uid;
   const targetUid = params.uid;
 
+  // Debug: log what we received
+  console.log("[admin/player] targetUid:", targetUid, "adminUid:", adminUid);
+
   const body = await req.json().catch(() => ({}));
   const action: string = String(body.action || "");
   const field: string | undefined = body.field ? String(body.field) : undefined;
   const amount: number = Number(body.amount || 0);
 
   try {
+    // First check if the player doc exists (outside transaction for better error)
+    const playerDoc = await adminDb().doc(`players/${targetUid}`).get();
+    if (!playerDoc.exists) {
+      console.error("[admin/player] Player not found at players/" + targetUid);
+      return error(`Player not found. UID: ${targetUid}`, 404);
+    }
+
     const result = await adminDb().runTransaction(async (tx) => {
       const ref = adminDb().doc(`players/${targetUid}`);
       const snap = await tx.get(ref);
