@@ -21,6 +21,7 @@ import {
   onValue as dbOnValue,
   onDisconnect as dbOnDisconnect,
   set as dbSet,
+  update as dbUpdate,
   remove as dbRemove,
   serverTimestamp as dbServerTimestamp,
 } from "firebase/database";
@@ -154,27 +155,55 @@ export interface PresenceEntry {
   t: number;      // server timestamp
 }
 
-const PRESENCE_STALE_MS = 30_000;
+// Players send a heartbeat every 15s (see Game.tsx), so 60s of silence means they left.
+const PRESENCE_STALE_MS = 60_000;
+
+/** Everyone walks the same outdoor city, so this zone name means "show all players". */
+export const WORLD_ZONE = "city";
+
+// How far this phone's clock is from the Firebase server's clock. Without this, a phone
+// whose clock is a minute off makes every other player look "stale" and invisible.
+let serverOffset = 0;
+if (typeof window !== "undefined") {
+  try {
+    dbOnValue(dbRef(rtdb, ".info/serverTimeOffset"), (snap) => {
+      serverOffset = Number(snap.val()) || 0;
+    });
+  } catch { /* offline: fall back to the local clock */ }
+}
+const serverNow = () => Date.now() + serverOffset;
 
 /** Write own presence to RTDB. Auto-removed on disconnect. */
-export function initPresence(uid: string, name: string, lookId: string, placeId: string) {
+export function initPresence(
+  uid: string,
+  name: string,
+  lookId: string,
+  placeId: string,
+  x = 0,
+  z = 0,
+  ry = 0
+) {
   const r = dbRef(rtdb, `presence/${uid}`);
   dbOnDisconnect(r).remove();
-  void dbSet(r, {
+  dbSet(r, {
     uid, name, lookId, placeId,
-    x: 0, z: 0, ry: 0, anim: "idle",
+    x, z, ry, anim: "idle",
     t: dbServerTimestamp(),
-  });
+  }).catch((e) => console.warn("[rtdb] initPresence failed (check Realtime Database rules + databaseURL):", e?.message || e));
   return r;
 }
 
-/** Update own presence (call max 4x/sec, only when state changes). */
+/**
+ * Update own presence (call max 4x/sec, only when state changes).
+ * Uses update(), NOT set(): set() would wipe every field that is not in `patch`
+ * (uid, look, position...) and the player would vanish for everyone else.
+ */
 export async function updatePresence(
   uid: string,
   patch: Partial<PresenceEntry>
 ): Promise<void> {
   try {
-    await dbSet(dbRef(rtdb, `presence/${uid}`), {
+    await dbUpdate(dbRef(rtdb, `presence/${uid}`), {
       ...patch,
       t: dbServerTimestamp(),
     });
@@ -192,46 +221,41 @@ export async function clearPresence(uid: string): Promise<void> {
   }
 }
 
-/** Subscribe to presence in a given zone (placeId). Filters stale entries. */
+function readPresence(snap: any, keep: (v: PresenceEntry) => boolean): PresenceEntry[] {
+  const now = serverNow();
+  const list: PresenceEntry[] = [];
+  snap.forEach((child: any) => {
+    const v = child.val() as PresenceEntry;
+    if (!v || !v.uid) return;
+    if (v.t && now - v.t > PRESENCE_STALE_MS) return;
+    if (!keep(v)) return;
+    list.push(v);
+  });
+  return list;
+}
+
+/** Subscribe to presence in a zone. The WORLD_ZONE ("city") shows everyone. */
 export function listenToPresence(
   placeId: string,
   cb: (entries: PresenceEntry[]) => void
 ): Unsubscribe {
-  const q = dbRef(rtdb, "presence");
-  const unsub = dbOnValue(q, (snap) => {
-    const now = Date.now();
-    const list: PresenceEntry[] = [];
-    snap.forEach((child) => {
-      const v = child.val() as PresenceEntry;
-      if (!v || !v.uid) return;
-      // Stale check (server time may be missing on first write)
-      const age = v.t ? now - v.t : 0;
-      if (v.t && age > PRESENCE_STALE_MS) return;
-      if (v.placeId !== placeId) return;
-      list.push(v);
-    });
-    cb(list);
-  });
+  const unsub = dbOnValue(
+    dbRef(rtdb, "presence"),
+    (snap) => cb(readPresence(snap, (v) => placeId === WORLD_ZONE || v.placeId === placeId)),
+    (err) => console.warn("[rtdb] listenToPresence denied (fix the Realtime Database rules):", err?.message || err)
+  );
   return unsub as unknown as Unsubscribe;
 }
 
-/** Subscribe to ALL presence entries (for PeopleSheet "elsewhere" section). */
+/** Subscribe to ALL presence entries (online count + PeopleSheet). */
 export function listenToAllPresence(
   cb: (entries: PresenceEntry[]) => void
 ): Unsubscribe {
-  const q = dbRef(rtdb, "presence");
-  const unsub = dbOnValue(q, (snap) => {
-    const now = Date.now();
-    const list: PresenceEntry[] = [];
-    snap.forEach((child) => {
-      const v = child.val() as PresenceEntry;
-      if (!v || !v.uid) return;
-      const age = v.t ? now - v.t : 0;
-      if (v.t && age > PRESENCE_STALE_MS) return;
-      list.push(v);
-    });
-    cb(list);
-  });
+  const unsub = dbOnValue(
+    dbRef(rtdb, "presence"),
+    (snap) => cb(readPresence(snap, () => true)),
+    (err) => console.warn("[rtdb] listenToAllPresence denied (fix the Realtime Database rules):", err?.message || err)
+  );
   return unsub as unknown as Unsubscribe;
 }
 
