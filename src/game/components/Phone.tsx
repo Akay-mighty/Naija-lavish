@@ -153,6 +153,8 @@ function MessagesApp() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [view, setView] = useState<"inbox" | "chat">("inbox");
+  const [activeChat, setActiveChat] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -176,34 +178,150 @@ function MessagesApp() {
     setSending(false);
   }
 
+  // Group messages by sender for inbox view
+  const conversations = messages.reduce<Record<string, { name: string; lastMsg: string; ts: number; count: number }>>((acc, m) => {
+    if (m.uid === uid) return acc;
+    if (!acc[m.uid]) {
+      acc[m.uid] = { name: m.name, lastMsg: m.text, ts: m.t, count: 1 };
+    } else {
+      acc[m.uid].lastMsg = m.text;
+      acc[m.uid].ts = m.t;
+      acc[m.uid].count++;
+    }
+    return acc;
+  }, {});
+  const convList = Object.entries(conversations).sort((a, b) => b[1].ts - a[1].ts);
+
+  // Filter messages for active chat
+  const activeMessages = activeChat ? messages.filter(m => m.uid === activeChat || m.uid === uid) : messages;
+
+  // ---- INBOX VIEW (like LagosLife) ----
+  if (view === "inbox") {
+    return (
+      <div>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-white text-base">Messages</h3>
+          <span className="text-white/40 text-xs">🔔</span>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 mb-3 p-0.5 bg-white/5 rounded-lg">
+          <button
+            onClick={() => {}}
+            className="flex-1 py-1.5 rounded-md text-xs font-medium bg-emerald-500 text-white"
+          >
+            Chats
+          </button>
+          <button
+            onClick={() => {}}
+            className="flex-1 py-1.5 rounded-md text-xs font-medium text-white/50"
+          >
+            Groups
+          </button>
+        </div>
+
+        {/* Global chat button */}
+        <button
+          onClick={() => { setView("chat"); setActiveChat(null); }}
+          className="w-full flex items-center gap-2.5 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 mb-2"
+        >
+          <div className="w-9 h-9 rounded-full bg-emerald-500 flex items-center justify-center text-white text-sm font-bold">
+            🌍
+          </div>
+          <div className="flex-1 text-left">
+            <div className="text-sm text-white font-medium">Global Chat</div>
+            <div className="text-[10px] text-white/40">
+              {messages.length > 0 ? messages[messages.length - 1].text.slice(0, 30) : "No messages yet"}
+            </div>
+          </div>
+          {messages.length > 0 && (
+            <span className="text-[9px] bg-emerald-500 text-white px-1.5 py-0.5 rounded-full font-bold">
+              {messages.length}
+            </span>
+          )}
+        </button>
+
+        {/* Conversation list */}
+        {convList.length === 0 ? (
+          <p className="text-[11px] text-white/40 text-center py-6">
+            No conversations yet. Be the first to say something in Global Chat!
+          </p>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {convList.map(([cuid, conv]) => (
+              <button
+                key={cuid}
+                onClick={() => { setView("chat"); setActiveChat(cuid); }}
+                className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/5"
+              >
+                <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white text-sm font-bold">
+                  {conv.name.slice(0, 1).toUpperCase()}
+                </div>
+                <div className="flex-1 text-left min-w-0">
+                  <div className="text-sm text-white font-medium truncate">{conv.name}</div>
+                  <div className="text-[10px] text-white/40 truncate">{conv.lastMsg}</div>
+                </div>
+                <span className="text-[9px] text-white/30">
+                  {new Date(conv.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ---- CHAT VIEW ----
   return (
     <div>
-      <h3 className="font-semibold text-white mb-2">Messages</h3>
-      {connected && (
-        <div className="text-[10px] text-white/40 mb-2 flex items-center gap-1">
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
-          Live · {messages.length} messages
+      {/* Chat header */}
+      <div className="flex items-center gap-2 mb-3">
+        <button
+          onClick={() => { setView("inbox"); setActiveChat(null); }}
+          className="text-white/50 text-xs hover:text-white"
+        >
+          ←
+        </button>
+        <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-white text-xs font-bold">
+          {activeChat ? (conversations[activeChat]?.name.slice(0, 1).toUpperCase() || "?") : "🌍"}
         </div>
-      )}
+        <span className="text-sm text-white font-medium">
+          {activeChat ? conversations[activeChat]?.name || "Chat" : "Global Chat"}
+        </span>
+        {connected && (
+          <span className="ml-auto text-[9px] text-emerald-400 flex items-center gap-1">
+            <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
+            Live
+          </span>
+        )}
+      </div>
+
+      {/* Messages */}
       <div
         ref={logRef}
         className="rounded-xl bg-white/5 p-2 mb-2 overflow-y-auto no-scrollbar"
-        style={{ maxHeight: 200, minHeight: 100 }}
+        style={{ maxHeight: 240, minHeight: 120 }}
       >
-        {messages.length === 0 ? (
+        {activeMessages.length === 0 ? (
           <p className="text-[11px] text-white/40 text-center py-4">
-            No messages yet. Be the first to say something!
+            No messages yet. Say something!
           </p>
         ) : (
-          <ol className="flex flex-col gap-1">
-            {messages.slice(-30).map((m) => (
+          <ol className="flex flex-col gap-1.5">
+            {activeMessages.slice(-50).map((m) => (
               <li key={m.id} className={`flex ${m.uid === uid ? "justify-end" : ""}`}>
                 <div
-                  className={`text-[11px] rounded-lg px-2 py-1 max-w-[80%] ${
-                    m.uid === uid ? "bg-emerald-500 text-white" : "bg-white/10 text-white"
+                  className={`text-[11px] rounded-lg px-2.5 py-1.5 max-w-[75%] ${
+                    m.uid === uid
+                      ? "bg-emerald-500 text-white"
+                      : "bg-white/10 text-white"
                   }`}
                 >
-                  {m.uid !== uid && <span className="font-semibold mr-1">{m.name}:</span>}
+                  {m.uid !== uid && (
+                    <div className="text-[9px] font-bold text-white/60 mb-0.5">{m.name}</div>
+                  )}
                   {m.text}
                 </div>
               </li>
@@ -211,6 +329,8 @@ function MessagesApp() {
           </ol>
         )}
       </div>
+
+      {/* Input */}
       <form
         onSubmit={(e) => { e.preventDefault(); send(); }}
         className="flex items-center gap-1.5"
@@ -218,16 +338,16 @@ function MessagesApp() {
         <input
           type="text"
           maxLength={200}
-          placeholder="Say something..."
+          placeholder="Type a message..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={!idToken || sending}
-          className="flex-1 bg-white/5 text-white text-xs px-2 py-1.5 rounded-lg outline-none"
+          className="flex-1 bg-white/5 text-white text-xs px-2.5 py-2 rounded-lg outline-none"
         />
         <button
           type="submit"
           disabled={!idToken || sending || !input.trim()}
-          className="px-2.5 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-medium disabled:opacity-50"
+          className="w-8 h-8 rounded-lg bg-emerald-500 text-white text-xs font-medium disabled:opacity-50 flex items-center justify-center"
         >
           ↑
         </button>
