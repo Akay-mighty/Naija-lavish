@@ -12,10 +12,10 @@ import { sfx } from "../lib/sound";
 import { apiFetch } from "../lib/apiFetch";
 import { listenToChat, sendChatMessage, type ChatDoc } from "@/lib/firestore";
 
-type App = "gist" | "bank" | "wallet" | "photos" | "contacts" | "settings" | "shop";
+type App = "messages" | "bank" | "wallet" | "photos" | "contacts" | "settings" | "shop";
 
 const APPS: Array<{ id: App; label: string; emoji: string; color: string; badge?: string }> = [
-  { id: "gist", label: "Gist", emoji: "💬", color: "#22c55e" },
+  { id: "messages", label: "Messages", emoji: "💬", color: "#22c55e" },
   { id: "bank", label: "Bank", emoji: "🏦", color: "#3b82f6" },
   { id: "wallet", label: "Wallet", emoji: "💰", color: "#f59e0b" },
   { id: "shop", label: "Boutique", emoji: "🛍️", color: "#d946ef" },
@@ -135,7 +135,7 @@ export default function Phone({ onClose }: { onClose: () => void }) {
 
 function PhoneApp({ app }: { app: App }) {
   switch (app) {
-    case "gist": return <GistApp />;
+    case "messages": return <MessagesApp />;
     case "bank": return <BankApp />;
     case "wallet": return <WalletApp />;
     case "shop": return <ShopApp />;
@@ -145,7 +145,7 @@ function PhoneApp({ app }: { app: App }) {
   }
 }
 
-function GistApp() {
+function MessagesApp() {
   const uid = useAuth((s) => s.uid);
   const idToken = useAuth((s) => s.idToken);
   const placeId = usePlayer((s) => s.placeId);
@@ -178,7 +178,7 @@ function GistApp() {
 
   return (
     <div>
-      <h3 className="font-semibold text-white mb-2">Gist</h3>
+      <h3 className="font-semibold text-white mb-2">Messages</h3>
       {connected && (
         <div className="text-[10px] text-white/40 mb-2 flex items-center gap-1">
           <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
@@ -192,7 +192,7 @@ function GistApp() {
       >
         {messages.length === 0 ? (
           <p className="text-[11px] text-white/40 text-center py-4">
-            No gist yet. Be the first to say something!
+            No messages yet. Be the first to say something!
           </p>
         ) : (
           <ol className="flex flex-col gap-1">

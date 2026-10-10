@@ -105,15 +105,21 @@ export default function AdminDashboard() {
       return;
     }
     setError("");
-    console.log("[admin] action:", action, "player.id:", player.id, "amount:", amount);
-    const r = await apiFetch(`/api/admin/player/${player.id}`, {
+    // Use player.id (doc ID) or fall back to player.uid (stored in doc)
+    const targetId = player.id || (player as any).uid;
+    if (!targetId) {
+      setError("Cannot find player ID. Try refreshing.");
+      return;
+    }
+    console.log("[admin] action:", action, "targetId:", targetId, "amount:", amount);
+    const r = await apiFetch(`/api/admin/player/${targetId}`, {
       method: "POST",
       body: { action, field, amount },
       idToken,
     });
     console.log("[admin] response:", r);
     if (!r.ok || !r.data?.ok) {
-      setError(r.error || `Action failed (status ${r.status}). Player ID: ${player.id}`);
+      setError(r.error || `Action failed (status ${r.status}). ID: ${targetId}`);
     } else {
       const note = r.data?.result?.note || action;
       setSuccessMsg(`${note} — ${player.name}`);
