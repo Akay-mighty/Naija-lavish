@@ -19,6 +19,7 @@ import {
 } from "@/lib/firestore";
 import HUD from "./HUD";
 import BottomNav from "./BottomNav";
+import VirtualJoystick from "./VirtualJoystick";
 import Chat from "./Chat";
 import Toasts from "./Toasts";
 import PlaceSheet from "./PlaceSheet";
@@ -374,6 +375,42 @@ export default function Game() {
         onNav={nav}
       />
       <Toasts />
+
+      {/* Virtual Joystick (visible, bottom-left) */}
+      {!hideUI && !interior && (
+        <VirtualJoystick
+          onMove={(dx, dy) => {
+            // Dispatch joystick movement to Scene3D
+            window.dispatchEvent(new CustomEvent("naijalavish:joystick", { detail: { dx, dy } }));
+          }}
+          onEnd={() => {
+            window.dispatchEvent(new CustomEvent("naijalavish:joystick-end"));
+          }}
+        />
+      )}
+
+      {/* Zoom buttons (bottom-right) */}
+      {!hideUI && !interior && (
+        <div
+          className="fixed right-2 z-20 flex flex-col gap-1"
+          style={{ bottom: "calc(80px + env(safe-area-inset-bottom, 0px))" }}
+        >
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent("naijalavish:zoom-in"))}
+            className="w-9 h-9 rounded-full bg-white flex items-center justify-center text-gray-600 font-bold"
+            style={{ boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}
+          >
+            +
+          </button>
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent("naijalavish:zoom-out"))}
+            className="w-9 h-9 rounded-full bg-white flex items-center justify-center text-gray-600 font-bold"
+            style={{ boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}
+          >
+            −
+          </button>
+        </div>
+      )}
 
       {hideUI && (
         <button

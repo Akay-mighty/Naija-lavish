@@ -26,7 +26,7 @@ interface Scene3DProps {
   interior: "home" | "owambe" | null;
 }
 
-const BOUNDS = { minX: -22, maxX: 22, minZ: -16, maxZ: 16 };
+const BOUNDS = { minX: -60, maxX: 60, minZ: -40, maxZ: 40 };
 
 export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
   const mountRef = useRef<HTMLDivElement>(null);

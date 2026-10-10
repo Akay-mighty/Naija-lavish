@@ -19,8 +19,6 @@ export default function Chat() {
   const [showStickers, setShowStickers] = useState(false);
   const [showQuick, setShowQuick] = useState(false);
   const [sending, setSending] = useState(false);
-  const [open, setOpen] = useState(false);
-  const [seen, setSeen] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const lastPlayedTs = useRef<number>(0);
@@ -40,12 +38,10 @@ export default function Chat() {
     return () => unsub();
   }, [uid]);
 
-  useEffect(() => { if (open) setSeen(messages.length); }, [open, messages.length]);
-
   // Auto-scroll
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [messages, open]);
+  }, [messages]);
 
   async function send(text: string) {
     if (!idToken || !text.trim() || sending) return;
@@ -74,53 +70,48 @@ export default function Chat() {
   }
 
   const isEmpty = messages.length === 0;
+  const [expanded, setExpanded] = useState(false);
 
-  const unread = Math.max(0, messages.length - seen);
-  const last = messages[messages.length - 1];
-  const wrapStyle = {
-    maxWidth: 360,
-    bottom: "calc(88px + env(safe-area-inset-bottom, 0px))",
-  } as const;
-
-  // Collapsed: just a small pill, never covers the world
-  if (!open) {
-    return (
-      <div className="absolute left-3 z-20 pointer-events-none" style={wrapStyle}>
+  return (
+    <div
+      className="absolute left-3 z-20 pointer-events-none"
+      style={{
+        maxWidth: expanded ? 320 : 180,
+        bottom: "calc(72px + env(safe-area-inset-bottom, 0px))",
+      }}
+    >
+      {/* Collapsed: small chat bar */}
+      {!expanded && (
         <button
-          onClick={() => { sfx.play("click"); setOpen(true); }}
-          className="panel pointer-events-auto flex items-center gap-2 px-3 py-2 text-left"
-          style={{ borderRadius: 16, maxWidth: 230 }}
-          aria-label="Open chat"
+          onClick={() => { setExpanded(true); }}
+          className="pointer-events-auto flex items-center gap-2 px-2.5 py-1.5 rounded-full"
+          style={{ background: "rgba(255,255,255,0.9)", backdropFilter: "blur(8px)", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }}
         >
-          <span className="text-lg">💬</span>
-          <span className="min-w-0">
-            <span className="block text-sm font-semibold leading-tight">Chat</span>
-            <span className="block text-[11px] text-foreground/50 truncate leading-tight">
-              {!connected ? "Connecting…" : last ? `${last.name}: ${last.text}` : "Tap to say hi"}
-            </span>
+          <span style={{ fontSize: 11 }}>💬</span>
+          <span className="text-[10px] text-gray-600 truncate" style={{ maxWidth: 100 }}>
+            {isEmpty ? "No messages" : messages[messages.length - 1].text.slice(0, 30)}
           </span>
-          {unread > 0 && (
-            <span className="ml-1 min-w-[20px] h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[11px] font-bold flex items-center justify-center">
-              {unread > 9 ? "9+" : unread}
+          {!isEmpty && (
+            <span className="text-[9px] bg-emerald-500 text-white px-1.5 rounded-full font-bold">
+              {messages.length}
             </span>
           )}
         </button>
-      </div>
-    );
-  }
+      )}
 
-  return (
-    <div className="absolute left-3 right-3 z-20 pointer-events-none" style={wrapStyle}>
-      <div className="flex justify-end mb-1">
-        <button
-          onClick={() => { sfx.play("click"); setOpen(false); setShowQuick(false); setShowStickers(false); }}
-          className="panel pointer-events-auto px-3 py-1 text-xs font-semibold"
-          style={{ borderRadius: 999 }}
-          aria-label="Close chat"
-        >
-          ✕ Close
-        </button>
-      </div>
+      {/* Expanded: full chat */}
+      {expanded && (
+        <>
+      {/* Connection indicator */}
+      {connected && !isEmpty && (
+        <div className="flex items-center justify-end mb-1">
+          <span className="text-[10px] text-foreground/40 bg-card/80 backdrop-blur px-2 py-0.5 rounded-full">
+            <span className="dot" style={{ width: 6, height: 6, marginRight: 4 }} />
+            Live · {messages.length} {messages.length === 1 ? "msg" : "msgs"}
+          </span>
+        </div>
+      )}
+
       {/* Chat log — compact, never covers the screen */}
       <div
         ref={logRef}
@@ -261,6 +252,16 @@ export default function Chat() {
           ↑
         </button>
       </form>
+
+      {/* Collapse button */}
+      <button
+        onClick={() => setExpanded(false)}
+        className="pointer-events-auto mt-1 text-[10px] text-white/40 bg-black/40 px-2 py-0.5 rounded-full"
+      >
+        ▼ Collapse
+      </button>
+        </>
+      )}
     </div>
   );
 }
