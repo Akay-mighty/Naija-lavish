@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../store/useAuth";
 import { usePlayer } from "../store/usePlayer";
 import { naira, shortNaira, clockFromHour } from "../lib/format";
-import { PLACE_BY_ID_ALL as PLACE_BY_ID } from "../data/places";
+import { PLACE_BY_ID_ALL as PLACE_BY_ID, ALL_PLACES } from "../data/places";
 import { QUEST_STEPS } from "../data/quests";
 import { sfx } from "../lib/sound";
 import { apiFetch } from "../lib/apiFetch";
@@ -137,6 +137,60 @@ export default function HUD() {
         >
           💃
         </button>
+      </div>
+
+      {/* === MINI-MAP (top-right) === */}
+      <div
+        className="fixed top-12 right-2 z-20"
+        style={{
+          width: 100,
+          height: 100,
+          background: "linear-gradient(135deg, #a8d5b6 0%, #c8e6c9 50%, #d4e9d4 100%)",
+          borderRadius: 12,
+          boxShadow: "0 2px 12px rgba(0,0,0,0.1)",
+          border: "2px solid white",
+          overflow: "hidden",
+        }}
+      >
+        {/* Roads */}
+        <div style={{ position: "absolute", left: 0, right: 0, top: "48%", height: 3, background: "#4a4a4a", opacity: 0.5 }} />
+        <div style={{ position: "absolute", top: 0, bottom: 0, left: "48%", width: 3, background: "#4a4a4a", opacity: 0.5 }} />
+
+        {/* Place dots */}
+        {ALL_PLACES.map(p => {
+          const left = ((p.pos[0] + 22) / 44) * 100;
+          const top = ((p.pos[1] + 16) / 32) * 100;
+          if (left < 0 || left > 100 || top < 0 || top > 100) return null;
+          return (
+            <div
+              key={p.id}
+              style={{
+                position: "absolute",
+                left: `${left}%`,
+                top: `${top}%`,
+                width: 5,
+                height: 5,
+                borderRadius: "50%",
+                background: p.id === placeId ? "#fbbf24" : p.color,
+                transform: "translate(-50%, -50%)",
+                boxShadow: p.id === placeId ? "0 0 4px #fbbf24" : "none",
+              }}
+            />
+          );
+        })}
+
+        {/* Player arrow */}
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            transform: "translate(-50%, -50%)",
+            fontSize: 10,
+          }}
+        >
+          🔺
+        </div>
       </div>
 
       {/* === NEEDS DROPDOWN (taps the time/mood area) === */}

@@ -195,14 +195,62 @@ function MessagesApp() {
   // Filter messages for active chat
   const activeMessages = activeChat ? messages.filter(m => m.uid === activeChat || m.uid === uid) : messages;
 
+  // ---- Search state ----
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Array<{uid: string; name: string}>>([]);
+
+  async function searchUsers(query: string) {
+    setSearchQuery(query);
+    if (query.trim().length < 2) { setSearchResults([]); return; }
+    // Search via Firestore: look for players whose name or username contains the query
+    try {
+      const { collection, query: fq, getDocs, where: fwhere, limit: flimit } = await import("firebase/firestore");
+      const { db } = await import("@/lib/firebase");
+      // Try username search first
+      const q = fq(collection(db, "players"), fwhere("username", ">=", query.toLowerCase()), fwhere("username", "<=", query.toLowerCase() + "\uf8ff"), flimit(10));
+      const snap = await getDocs(q);
+      const results = snap.docs.map(d => ({ uid: d.id, ...(d.data() as any) }));
+      setSearchResults(results.map(r => ({ uid: r.uid, name: r.name || r.username || "Unknown" })));
+    } catch {
+      setSearchResults([]);
+    }
+  }
+
   // ---- INBOX VIEW (like LagosLife) ----
   if (view === "inbox") {
     return (
       <div>
         {/* Header */}
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold text-white text-base">Messages</h3>
           <span className="text-white/40 text-xs">🔔</span>
+        </div>
+
+        {/* Search bar */}
+        <div className="mb-3">
+          <input
+            type="text"
+            placeholder="Search username to chat..."
+            value={searchQuery}
+            onChange={(e) => searchUsers(e.target.value)}
+            className="w-full bg-white/5 text-white text-xs px-3 py-2 rounded-lg outline-none"
+          />
+          {searchResults.length > 0 && (
+            <div className="mt-1.5 flex flex-col gap-0.5">
+              {searchResults.map(r => (
+                <button
+                  key={r.uid}
+                  onClick={() => { setView("chat"); setActiveChat(null); setSearchResults([]); setSearchQuery(""); }}
+                  className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white/5"
+                >
+                  <div className="w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center text-white text-xs font-bold">
+                    {r.name.slice(0, 1).toUpperCase()}
+                  </div>
+                  <span className="text-xs text-white">{r.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Tabs */}
