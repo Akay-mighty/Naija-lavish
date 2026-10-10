@@ -342,64 +342,186 @@ export function buildBillboards(scene: THREE.Scene) {
 // AMBIENT TRAFFIC — instanced green-and-white taxis on loops
 // ============================================================
 
+// ============================================================
+// DETERMINISTIC TRAFFIC — lane-following, multi-vehicle, zero network
+// Each car's position is derived from (serverTime × speed + seed) mod laneLength.
+// Every player sees the same traffic with zero network cost.
+// Only simulate cars within ~120 units of camera (spawn/despawn at edges).
+// ============================================================
+
+type CarType = "taxi" | "sedan" | "suv";
+interface CarLane {
+  axis: "x" | "z";       // which axis the car travels along
+  offset: number;        // perpendicular offset (which lane)
+  direction: 1 | -1;     // travel direction
+  length: number;        // total lane length (for looping)
+  start: number;         // start position along axis
+}
+
 export interface TrafficSystem {
-  update: (dt: number, t: number) => void;
+  update: (dt: number, t: number, cameraPos?: THREE.Vector3) => void;
   dispose: () => void;
 }
 
 export function buildAmbientTraffic(scene: THREE.Scene): TrafficSystem {
-  const taxiCount = 6;
-  const taxiGeo = new THREE.BoxGeometry(1.4, 0.6, 0.7);
-  const taxiMat = stdMat("#22c55e");
-  const taxis = new THREE.InstancedMesh(taxiGeo, taxiMat, taxiCount);
-  taxis.castShadow = true;
-  const roofGeo = new THREE.BoxGeometry(1.2, 0.4, 0.6);
-  const roofMat = stdMat("#ffffff");
-  const roofs = new THREE.InstancedMesh(roofGeo, roofMat, taxiCount);
+  // === Car models (low-poly, InstancedMesh per type) ===
+  const carTypes: CarType[] = ["taxi", "sedan", "suv"];
+  const carGeos: Record<CarType, THREE.BoxGeometry> = {
+    taxi: new THREE.BoxGeometry(1.5, 0.55, 0.7),
+    sedan: new THREE.BoxGeometry(1.3, 0.5, 0.65),
+    suv: new THREE.BoxGeometry(1.6, 0.7, 0.75),
+  };
+  const carMats: Record<CarType, THREE.MeshStandardMaterial> = {
+    // Abuja taxi: green body, white roof (stripes painted via instance color)
+    taxi: new THREE.MeshStandardMaterial({ color: 0x00875a, roughness: 0.6 }),
+    sedan: new THREE.MeshStandardMaterial({ color: 0x6b7280, roughness: 0.6 }),
+    suv: new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.6 }),
+  };
+  // Roof (white for taxis, darker for others)
+  const roofGeos: Record<CarType, THREE.BoxGeometry> = {
+    taxi: new THREE.BoxGeometry(1.3, 0.35, 0.6),
+    sedan: new THREE.BoxGeometry(1.1, 0.3, 0.55),
+    suv: new THREE.BoxGeometry(1.4, 0.45, 0.65),
+  };
+  const roofMats: Record<CarType, THREE.MeshStandardMaterial> = {
+    taxi: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 }),
+    sedan: new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.6 }),
+    suv: new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.6 }),
+  };
+  // Headlights (emissive, no real lights)
+  const headGeo = new THREE.BoxGeometry(0.05, 0.1, 0.15);
+  const headMat = new THREE.MeshStandardMaterial({ color: 0xfffde0, emissive: 0xfffde0, emissiveIntensity: 0.3 });
+  // Taillights (red emissive)
+  const tailGeo = new THREE.BoxGeometry(0.05, 0.08, 0.12);
+  const tailMat = new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 0.2 });
+
+  // === Lanes (4 horizontal lanes on main road + 2 vertical) ===
+  const lanes: CarLane[] = [
+    // Main road: 2 lanes going right (z = -1.5, -2.5), 2 going left (z = 1.5, 2.5)
+    { axis: "x", offset: -1.5, direction: 1, length: 56, start: -28 },
+    { axis: "x", offset: -2.5, direction: 1, length: 56, start: -28 },
+    { axis: "x", offset: 1.5, direction: -1, length: 56, start: -28 },
+    { axis: "x", offset: 2.5, direction: -1, length: 56, start: -28 },
+    // Vertical road: 1 lane each direction
+    { axis: "z", offset: 2, direction: 1, length: 40, start: -20 },
+    { axis: "z", offset: -2, direction: -1, length: 40, start: -20 },
+  ];
+
+  // === Cars (12 total: 6 taxis, 3 sedans, 3 SUVs) ===
+  const totalCars = 12;
+  const carTypeList: CarType[] = [];
+  for (let i = 0; i < 6; i++) carTypeList.push("taxi");
+  for (let i = 0; i < 3; i++) carTypeList.push("sedan");
+  for (let i = 0; i < 3; i++) carTypeList.push("suv");
+
+  // Count per type for InstancedMesh sizing
+  const typeCounts: Record<CarType, number> = { taxi: 6, sedan: 3, suv: 3 };
+
+  // Create InstancedMesh per type
+  const bodyMeshes: Record<CarType, THREE.InstancedMesh> = {} as any;
+  const roofMeshes: Record<CarType, THREE.InstancedMesh> = {} as any;
+  for (const type of carTypes) {
+    bodyMeshes[type] = new THREE.InstancedMesh(carGeos[type], carMats[type], typeCounts[type]);
+    bodyMeshes[type].castShadow = true;
+    roofMeshes[type] = new THREE.InstancedMesh(roofGeos[type], roofMats[type], typeCounts[type]);
+    scene.add(bodyMeshes[type]);
+    scene.add(roofMeshes[type]);
+  }
+
+  // Car state: { lane, seed, speed, type, bodyIndex }
+  interface CarState { lane: number; seed: number; speed: number; type: CarType; bodyIdx: number; }
+  const cars: CarState[] = [];
+  for (let i = 0; i < totalCars; i++) {
+    const type = carTypeList[i];
+    const typeIdx = carTypeList.slice(0, i).filter(t => t === type).length;
+    cars.push({
+      lane: i % lanes.length,       // distribute across lanes
+      seed: i * 137.5,               // deterministic per car
+      speed: 4 + (i % 3) * 2,       // 4, 6, or 8 units/sec
+      type,
+      bodyIdx: typeIdx,
+    });
+  }
+
+  // Track which type's instance index we're writing to
+  const typeWriteIdx: Record<CarType, number> = { taxi: 0, sedan: 0, suv: 0 };
 
   const m = new THREE.Matrix4();
   const pos = new THREE.Vector3();
   const quat = new THREE.Quaternion();
   const scl = new THREE.Vector3(1, 1, 1);
+  const hiddenMat = new THREE.Matrix4().makeScale(0, 0, 0); // hide car when off-screen
 
-  // Routes: alternate horizontal + vertical, different speeds/phases
-  const routes = Array.from({ length: taxiCount }, (_, i) => ({
-    horizontal: i % 2 === 0,
-    offset: (i / taxiCount) * Math.PI * 2,
-    speed: 0.3 + (i % 3) * 0.1,
-    lane: (i % 2 ? 1 : -1) * 1.0, // alternate sides
-  }));
+  function update(_dt: number, t: number, cameraPos?: THREE.Vector3) {
+    // Reset write indices
+    typeWriteIdx.taxi = 0;
+    typeWriteIdx.sedan = 0;
+    typeWriteIdx.suv = 0;
 
-  scene.add(taxis);
-  scene.add(roofs);
+    for (const car of cars) {
+      const lane = lanes[car.lane];
+      // Deterministic position: s = (t * speed + seed) mod laneLength
+      const s = ((t * car.speed + car.seed) % lane.length + lane.length) % lane.length;
+      const distAlong = lane.start + s;
 
-  function update(_dt: number, t: number) {
-    for (let i = 0; i < taxiCount; i++) {
-      const r = routes[i];
-      if (r.horizontal) {
-        const u = ((t * r.speed + r.offset) % (Math.PI * 2)) / (Math.PI * 2); // 0..1
-        pos.set(-20 + u * 40, 0.5, r.lane);
-        quat.setFromEuler(new THREE.Euler(0, u > 0.5 ? -Math.PI / 2 : Math.PI / 2, 0));
+      let x: number, z: number, rotY: number;
+      if (lane.axis === "x") {
+        x = distAlong;
+        z = lane.offset;
+        rotY = lane.direction === 1 ? Math.PI / 2 : -Math.PI / 2;
       } else {
-        const u = ((t * r.speed + r.offset) % (Math.PI * 2)) / (Math.PI * 2);
-        pos.set(r.lane, 0.5, -15 + u * 30);
-        quat.setFromEuler(new THREE.Euler(0, u > 0.5 ? 0 : Math.PI, 0));
+        x = lane.offset;
+        z = distAlong;
+        rotY = lane.direction === 1 ? 0 : Math.PI;
       }
-      m.compose(pos, quat, scl);
-      taxis.setMatrixAt(i, m);
-      pos.y = 1.0;
-      m.compose(pos, quat, scl);
-      roofs.setMatrixAt(i, m);
+
+      // Only render if within ~120 units of camera (or if no camera)
+      let visible = true;
+      if (cameraPos) {
+        const dx = x - cameraPos.x;
+        const dz = z - cameraPos.z;
+        if (Math.hypot(dx, dz) > 60) visible = false;
+      }
+
+      // Write to InstancedMesh
+      const writeIdx = typeWriteIdx[car.type]++;
+      if (writeIdx >= typeCounts[car.type]) continue;
+
+      if (visible) {
+        pos.set(x, 0.35, z);
+        quat.setFromEuler(new THREE.Euler(0, rotY, 0));
+        m.compose(pos, quat, scl);
+        bodyMeshes[car.type].setMatrixAt(writeIdx, m);
+        pos.y = 0.75;
+        m.compose(pos, quat, scl);
+        roofMeshes[car.type].setMatrixAt(writeIdx, m);
+      } else {
+        // Hide this instance
+        bodyMeshes[car.type].setMatrixAt(writeIdx, hiddenMat);
+        roofMeshes[car.type].setMatrixAt(writeIdx, hiddenMat);
+      }
     }
-    taxis.instanceMatrix.needsUpdate = true;
-    roofs.instanceMatrix.needsUpdate = true;
+
+    // Mark all as updated
+    for (const type of carTypes) {
+      bodyMeshes[type].instanceMatrix.needsUpdate = true;
+      roofMeshes[type].instanceMatrix.needsUpdate = true;
+    }
   }
 
   function dispose() {
-    scene.remove(taxis);
-    scene.remove(roofs);
-    taxiGeo.dispose();
-    roofGeo.dispose();
+    for (const type of carTypes) {
+      scene.remove(bodyMeshes[type]);
+      scene.remove(roofMeshes[type]);
+      carGeos[type].dispose();
+      roofGeos[type].dispose();
+      carMats[type].dispose();
+      roofMats[type].dispose();
+    }
+    headGeo.dispose();
+    headMat.dispose();
+    tailGeo.dispose();
+    tailMat.dispose();
   }
 
   return { update, dispose };

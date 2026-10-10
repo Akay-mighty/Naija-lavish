@@ -40,20 +40,27 @@ export function buildPlace(p: Place): THREE.Group {
   switch (p.id) {
     case "wuse-market":      buildWuseMarket(g, baseHex, accentHex); break;
     case "area1":            buildArea1(g, baseHex, accentHex); break;
-    case "garki-market":     buildGarkiMarket(g, baseHex, accentHex); break;
-    case "maitama":          buildMaitama(g, baseHex, accentHex); break;
+    case "garki-market":     buildCityBuilding(g, baseHex, accentHex, 3, 3, "#e5e7eb", "GARKI MARKET"); break;
+    case "maitama":          buildCityBuilding(g, baseHex, accentHex, 6, 4, "#fef3c7", "MAITAMA"); break;
     case "berger":           buildBerger(g, baseHex, accentHex); break;
     case "jabi":             buildJabi(g, baseHex, accentHex); break;
     case "millennium":       buildMillennium(g, baseHex, accentHex); break;
-    case "transcorp":        buildTranscorp(g, baseHex, accentHex); break;
+    case "transcorp":        buildCityBuilding(g, baseHex, accentHex, 14, 4, "#dbeafe", "TRANSCORP"); break;
     case "magicland":        buildMagicland(g, baseHex, accentHex); break;
-    case "home":             buildHome(g, baseHex, accentHex); break;
+    case "home":             buildCityBuilding(g, baseHex, accentHex, 2.5, 2, "#fef3c7", "HOME"); break;
     case "unity":            buildUnity(g, baseHex, accentHex); break;
     case "national-mosque":  buildNationalMosque(g, baseHex, accentHex); break;
     case "aso-rock":         buildAsoRock(g, baseHex, accentHex); break;
     case "night-market":     buildNightMarket(g, baseHex, accentHex); break;
     case "city-gate":        buildCityGate(g, baseHex, accentHex); break;
     case "national-assembly":buildNationalAssembly(g, baseHex, accentHex); break;
+    // Kaduna places
+    case "kd-murtala-square":buildCityBuilding(g, baseHex, accentHex, 2, 2, "#86efac", "MURTALA"); break;
+    case "kd-ahmadu-bello-way": buildCityBuilding(g, baseHex, accentHex, 5, 3, "#fde68a", "AHMADU BELLO"); break;
+    case "kd-nasarawa-market": buildCityBuilding(g, baseHex, accentHex, 3, 3, "#a7f3d0", "NASARAWA"); break;
+    case "kd-lugard-hall":   buildCityBuilding(g, baseHex, accentHex, 7, 3, "#c7d2fe", "LUGARD HALL"); break;
+    case "kd-ranch":         buildAsoRock(g, baseHex, accentHex); break;
+    case "kd-galaxy-nightclub": buildCityBuilding(g, baseHex, accentHex, 5, 3, "#f5d0fe", "GALAXY"); break;
     default:                 buildDefault(g, baseHex, accentHex);
   }
 
@@ -613,18 +620,105 @@ function buildNationalAssembly(g: THREE.Group, base: string, accent: string) {
 }
 
 function buildDefault(g: THREE.Group, base: string, accent: string) {
-  // Fallback: simple building
-  const b = new THREE.Mesh(
-    new THREE.BoxGeometry(3, 3, 3),
-    stdMat(base)
-  );
-  b.position.y = 1.5;
-  b.castShadow = true;
-  g.add(b);
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(2.2, 1.2, 4), stdMat(accent));
-  roof.position.y = 3.6;
-  roof.rotation.y = Math.PI / 4;
+  buildCityBuilding(g, base, accent, 4, 3, "#e5e7eb", "");
+}
+
+// ============================================================
+// PROPER CITY BUILDING — tall, with window textures, roof, AC units
+// ============================================================
+function buildCityBuilding(
+  g: THREE.Group,
+  base: string,
+  accent: string,
+  height: number,       // building height in units
+  width: number,        // building width/depth
+  wallColor: string,    // wall color
+  signText: string,
+) {
+  const h = Math.max(height, 2);
+  const w = Math.max(width, 2);
+
+  // Wall material with window texture
+  const faceTex = makeBuildingFace({
+    baseColor: wallColor,
+    rows: Math.max(2, Math.floor(h / 1.5)),
+    cols: Math.max(2, Math.floor(w / 1.2)),
+    awningColor: h <= 3 ? base : undefined,
+    signText: signText || undefined,
+    signColor: "#0a4a2a",
+    hasAC: h > 4,
+    withDoor: true,
+  });
+  const wallMat = new THREE.MeshStandardMaterial({ map: faceTex, roughness: 0.7 });
+
+  // Main building
+  const bldg = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), wallMat);
+  bldg.position.y = h / 2;
+  bldg.castShadow = true;
+  bldg.receiveShadow = true;
+  g.add(bldg);
+
+  // Flat roof (with slight detail)
+  const roofMat = stdMat("#4a4a4a");
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.1, 0.15, w + 0.1), roofMat);
+  roof.position.y = h + 0.075;
+  roof.castShadow = true;
   g.add(roof);
+
+  // Roof details: AC units + water tank for taller buildings
+  if (h > 4) {
+    const acMat = stdMat("#7a7a7a");
+    for (let i = 0; i < 2; i++) {
+      const ac = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.3, 0.5), acMat);
+      ac.position.set(
+        (i === 0 ? -1 : 1) * (w / 3),
+        h + 0.3,
+        w / 3
+      );
+      g.add(ac);
+    }
+    // Water tank on roof
+    const tank = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.3, 0.3, 0.5, 8),
+      stdMat("#1a4a6a")
+    );
+    tank.position.set(0, h + 0.4, -w / 3);
+    g.add(tank);
+  }
+
+  // Lit crown for tall buildings (like Transcorp)
+  if (h > 8) {
+    const crown = new THREE.Mesh(
+      new THREE.BoxGeometry(w + 0.3, 0.8, w + 0.3),
+      new THREE.MeshStandardMaterial({ color: 0xfbbf24, emissive: 0xfbbf24, emissiveIntensity: 0.5 })
+    );
+    crown.position.y = h + 0.6;
+    g.add(crown);
+    // Antenna
+    const antenna = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.03, 0.03, 2, 6),
+      stdMat("#9ca3af")
+    );
+    antenna.position.y = h + 2;
+    g.add(antenna);
+    // Red beacon
+    const beacon = new THREE.Mesh(
+      new THREE.SphereGeometry(0.1, 6, 4),
+      new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 0.8 })
+    );
+    beacon.position.y = h + 3.1;
+    g.add(beacon);
+  }
+
+  // Ground-floor awning (colored)
+  if (h >= 3) {
+    const awning = new THREE.Mesh(
+      new THREE.BoxGeometry(w + 0.2, 0.1, 0.4),
+      stdMat(base)
+    );
+    awning.position.set(0, 1.5, w / 2 + 0.1);
+    g.add(awning);
+  }
 }
 
 // ============================================================
