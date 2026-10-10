@@ -398,13 +398,13 @@ export function buildAmbientTraffic(scene: THREE.Scene): TrafficSystem {
   // === Lanes (4 horizontal lanes on main road + 2 vertical) ===
   const lanes: CarLane[] = [
     // Main road: 2 lanes going right (z = -1.5, -2.5), 2 going left (z = 1.5, 2.5)
-    { axis: "x", offset: -1.5, direction: 1, length: 56, start: -28 },
-    { axis: "x", offset: -2.5, direction: 1, length: 56, start: -28 },
-    { axis: "x", offset: 1.5, direction: -1, length: 56, start: -28 },
-    { axis: "x", offset: 2.5, direction: -1, length: 56, start: -28 },
+    { axis: "x", offset: -1.5, direction: 1, length: 120, start: -60 },
+    { axis: "x", offset: -2.5, direction: 1, length: 120, start: -60 },
+    { axis: "x", offset: 1.5, direction: -1, length: 120, start: -60 },
+    { axis: "x", offset: 2.5, direction: -1, length: 120, start: -60 },
     // Vertical road: 1 lane each direction
-    { axis: "z", offset: 2, direction: 1, length: 40, start: -20 },
-    { axis: "z", offset: -2, direction: -1, length: 40, start: -20 },
+    { axis: "z", offset: 2, direction: 1, length: 80, start: -40 },
+    { axis: "z", offset: -2, direction: -1, length: 80, start: -40 },
   ];
 
   // === Cars (12 total: 6 taxis, 3 sedans, 3 SUVs) ===
