@@ -47,7 +47,12 @@ export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
   const qualityRef = useRef<Quality>(loadQuality());
   const lastPresencePushRef = useRef<number>(0);
   const cameraDistanceRef = useRef<number>(18);
-  const cameraAngleRef = useRef<number>(0); // azimuth
+  const cameraYawRef = useRef(0);     // horizontal angle
+  const cameraPitchRef = useRef(0.7); // vertical angle
+  const dragStartRef = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null);
+  const pointerDownPos = useRef<{ x: number; y: number; time: number } | null>(null);
+  const isDragging = useRef(false);
+  const joystickRef = useRef({ active: false, x: 0, y: 0, dx: 0, dy: 0 });
   const pinchStartRef = useRef<{ dist: number; zoom: number } | null>(null);
   // Interior refs
   const interiorGroupRef = useRef<THREE.Group | null>(null);
@@ -229,17 +234,17 @@ export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
       };
     }
 
-    // ---- Camera follow + orbit (damped) ----
-    function updateCamera(target: THREE.Vector3, t: number) {
-      // Damped orbit: subtle sway when idle, follow when walking
-      const desiredX = target.x + Math.sin(cameraAngleRef.current) * cameraDistanceRef.current * 0.5;
-      const desiredZ = target.z + cameraDistanceRef.current;
-      const desiredY = cameraDistanceRef.current * 0.9;
-      camera.position.x += (desiredX - camera.position.x) * 0.06;
-      camera.position.y += (desiredY - camera.position.y) * 0.06;
-      camera.position.z += (desiredZ - camera.position.z) * 0.06;
-      // Subtle sway
-      cameraAngleRef.current = Math.sin(t * 0.04) * 0.1;
+    // ---- Camera orbit + follow (drag to orbit, pinch/button to zoom) ----
+    function updateCamera(target: THREE.Vector3) {
+      const dist = cameraDistanceRef.current;
+      const yaw = cameraYawRef.current;
+      const pitch = cameraPitchRef.current;
+      const desiredX = target.x + Math.sin(yaw) * dist * Math.cos(pitch);
+      const desiredZ = target.z + Math.cos(yaw) * dist * Math.cos(pitch);
+      const desiredY = dist * Math.sin(pitch);
+      camera.position.x += (desiredX - camera.position.x) * 0.1;
+      camera.position.y += (desiredY - camera.position.y) * 0.1;
+      camera.position.z += (desiredZ - camera.position.z) * 0.1;
       camera.lookAt(target.x, 1, target.z);
     }
 
@@ -262,8 +267,37 @@ export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
         }
       });
 
-      // Walk character toward target
-      if (charRef.current && walkTargetRef.current && avatarPartsRef.current) {
+      // ---- Joystick movement (camera-relative) ----
+      if (charRef.current && avatarPartsRef.current && joystickRef.current.active) {
+        const jx = joystickRef.current.dx / 50; // -1..1
+        const jy = joystickRef.current.dy / 50; // -1..1 (up = negative = forward)
+        const speed = 6 * dt;
+        // Camera-relative: forward = direction from camera to character (XZ)
+        const camForward = new THREE.Vector3();
+        camera.getWorldDirection(camForward);
+        camForward.y = 0;
+        camForward.normalize();
+        const camRight = new THREE.Vector3().crossVectors(camForward, new THREE.Vector3(0, 1, 0));
+        // Move character: jy = forward/back, jx = left/right
+        const moveX = camForward.x * (-jy) + camRight.x * jx;
+        const moveZ = camForward.z * (-jy) + camRight.z * jx;
+        charRef.current.position.x = Math.max(BOUNDS.minX, Math.min(BOUNDS.maxX, charRef.current.position.x + moveX * speed));
+        charRef.current.position.z = Math.max(BOUNDS.minZ, Math.min(BOUNDS.maxZ, charRef.current.position.z + moveZ * speed));
+        // Face movement direction
+        if (Math.abs(jx) > 0.1 || Math.abs(jy) > 0.1) {
+          const angle = Math.atan2(moveX, moveZ);
+          charRef.current.rotation.y = angle;
+          animateAvatar(avatarPartsRef.current, t, true, "walk");
+          setMoveChar(charRef.current.position.x, charRef.current.position.z, angle);
+        } else {
+          animateAvatar(avatarPartsRef.current, t, false, "idle");
+        }
+        // Cancel any tap-to-walk target
+        walkTargetRef.current = null;
+        if (pathLineRef.current) pathLineRef.current.visible = false;
+      }
+      // ---- Walk character toward tap target ----
+      else if (charRef.current && walkTargetRef.current && avatarPartsRef.current) {
         const target = walkTargetRef.current;
         const cur = charRef.current.position;
         const dx = target.x - cur.x;
@@ -344,7 +378,7 @@ export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
       }
 
       // Camera follow
-      if (charRef.current) updateCamera(charRef.current.position, t);
+      if (charRef.current) updateCamera(charRef.current.position);
 
       // Day/night cycle
       const hour = usePlayer.getState().gameHour;
@@ -418,45 +452,127 @@ export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
       qualityRef.current = newQ;
     });
 
-    // ---- Tap to walk ----
+    // ---- Pointer handling: tap=walk, drag=orbit, 2-finger=zoom ----
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
-    const onClick = (e: PointerEvent) => {
-      if (e.pointerType === "touch" && (e as any).isFirstTouch === false) return; // ignore second finger
-      const rect = renderer.domElement.getBoundingClientRect();
-      pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(pointer, camera);
 
-      // Try place markers first
-      const markerObjs = Object.values(markersRef.current);
-      const hits = raycaster.intersectObjects(markerObjs, true);
-      if (hits.length > 0) {
-        let groupId: string | null = null;
-        let cur: THREE.Object3D | null = hits[0].object;
-        while (cur && !groupId) {
-          for (const [id, g] of Object.entries(markersRef.current)) {
-            if (g === cur) groupId = id;
-          }
-          cur = cur.parent;
-        }
-        if (groupId && placePosRef.current[groupId]) {
-          const pos = placePosRef.current[groupId];
-          walkTargetRef.current = new THREE.Vector3(pos.x, 0, pos.z + 2.2);
-          return;
-        }
+    // Pointer down — record start position (could be tap, drag, or joystick)
+    const onPointerDown = (e: PointerEvent) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+      pointerDownPos.current = { x: px, y: py, time: Date.now() };
+
+      // If touch is in bottom-left quadrant → joystick
+      if (e.pointerType === "touch" && px < rect.width * 0.4 && py > rect.height * 0.5) {
+        joystickRef.current.active = true;
+        joystickRef.current.x = px;
+        joystickRef.current.y = py;
+        joystickRef.current.dx = 0;
+        joystickRef.current.dy = 0;
+        return;
       }
 
-      // Else: walk to ground point
-      const groundHits = raycaster.intersectObject(scene.children.find((c) => c instanceof THREE.Mesh && c.geometry instanceof THREE.PlaneGeometry) as THREE.Object3D);
-      if (groundHits.length > 0) {
-        const pt = groundHits[0].point;
-        const x = Math.max(BOUNDS.minX, Math.min(BOUNDS.maxX, pt.x));
-        const z = Math.max(BOUNDS.minZ, Math.min(BOUNDS.maxZ, pt.z));
-        walkTargetRef.current = new THREE.Vector3(x, 0, z);
+      // Else → start drag-orbit
+      dragStartRef.current = { x: px, y: py, yaw: cameraYawRef.current, pitch: cameraPitchRef.current };
+      isDragging.current = false;
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+
+      // Joystick movement
+      if (joystickRef.current.active) {
+        const dx = px - joystickRef.current.x;
+        const dy = py - joystickRef.current.y;
+        const maxDist = 50;
+        const len = Math.hypot(dx, dy);
+        if (len > maxDist) {
+          joystickRef.current.dx = (dx / len) * maxDist;
+          joystickRef.current.dy = (dy / len) * maxDist;
+        } else {
+          joystickRef.current.dx = dx;
+          joystickRef.current.dy = dy;
+        }
+        return;
+      }
+
+      // Drag orbit
+      if (dragStartRef.current && pointerDownPos.current) {
+        const dx = px - dragStartRef.current.x;
+        const dy = py - dragStartRef.current.y;
+        if (Math.hypot(dx, dy) > 5) isDragging.current = true;
+        cameraYawRef.current = dragStartRef.current.yaw + dx * 0.005;
+        cameraPitchRef.current = Math.max(0.2, Math.min(1.3, dragStartRef.current.pitch + dy * 0.005));
       }
     };
-    renderer.domElement.addEventListener("pointerdown", onClick);
+
+    const onPointerUp = (e: PointerEvent) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+
+      // Joystick release
+      if (joystickRef.current.active) {
+        joystickRef.current.active = false;
+        joystickRef.current.dx = 0;
+        joystickRef.current.dy = 0;
+        return;
+      }
+
+      // If was a tap (not drag) → walk to point
+      if (pointerDownPos.current && !isDragging.current) {
+        const dt = Date.now() - pointerDownPos.current.time;
+        if (dt < 300) {
+          pointer.x = (px / rect.width) * 2 - 1;
+          pointer.y = -(py / rect.height) * 2 + 1;
+          raycaster.setFromCamera(pointer, camera);
+
+          // Try place markers first
+          const markerObjs = Object.values(markersRef.current);
+          const hits = raycaster.intersectObjects(markerObjs, true);
+          if (hits.length > 0) {
+            let groupId: string | null = null;
+            let cur: THREE.Object3D | null = hits[0].object;
+            while (cur && !groupId) {
+              for (const [id, g] of Object.entries(markersRef.current)) {
+                if (g === cur) groupId = id;
+              }
+              cur = cur.parent;
+            }
+            if (groupId && placePosRef.current[groupId]) {
+              const pos = placePosRef.current[groupId];
+              walkTargetRef.current = new THREE.Vector3(pos.x, 0, pos.z + 2.2);
+              pointerDownPos.current = null;
+              return;
+            }
+          }
+
+          // Else: walk to ground point
+          const groundMesh = scene.children.find((c) => c instanceof THREE.Mesh && c.geometry instanceof THREE.PlaneGeometry);
+          if (groundMesh) {
+            const groundHits = raycaster.intersectObject(groundMesh);
+            if (groundHits.length > 0) {
+              const pt = groundHits[0].point;
+              const x = Math.max(BOUNDS.minX, Math.min(BOUNDS.maxX, pt.x));
+              const z = Math.max(BOUNDS.minZ, Math.min(BOUNDS.maxZ, pt.z));
+              walkTargetRef.current = new THREE.Vector3(x, 0, z);
+            }
+          }
+        }
+      }
+
+      pointerDownPos.current = null;
+      dragStartRef.current = null;
+      isDragging.current = false;
+    };
+
+    renderer.domElement.addEventListener("pointerdown", onPointerDown);
+    renderer.domElement.addEventListener("pointermove", onPointerMove);
+    renderer.domElement.addEventListener("pointerup", onPointerUp);
+    renderer.domElement.addEventListener("pointercancel", onPointerUp);
 
     // ---- Pinch zoom ----
     const onTouchStart = (e: TouchEvent) => {
@@ -504,7 +620,10 @@ export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
     return () => {
       cancelAnimationFrame(rafRef.current);
       ro.disconnect();
-      renderer.domElement.removeEventListener("pointerdown", onClick);
+      renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+      renderer.domElement.removeEventListener("pointermove", onPointerMove);
+      renderer.domElement.removeEventListener("pointerup", onPointerUp);
+      renderer.domElement.removeEventListener("pointercancel", onPointerUp);
       renderer.domElement.removeEventListener("touchstart", onTouchStart);
       renderer.domElement.removeEventListener("touchmove", onTouchMove);
       renderer.domElement.removeEventListener("wheel", onWheel);
