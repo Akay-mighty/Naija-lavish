@@ -25,6 +25,7 @@ import PlaceSheet from "./PlaceSheet";
 import MapSheet from "./MapSheet";
 import PeopleSheet from "./PeopleSheet";
 import Phone from "./Phone";
+import RideOverlay from "./RideOverlay";
 
 // Simple need-warning lines (no fake NPC chatter)
 const NEED_LINES = {
@@ -96,6 +97,7 @@ export default function Game() {
   const [targetPlaceId, setTargetPlaceId] = useState<string | null>(null);
   const [hideUI, setHideUI] = useState(false);
   const [interior, setInterior] = useState<"home" | "owambe" | null>(null);
+  const [ride, setRide] = useState<{ from: string; to: string } | null>(null);
 
   // Sync player store from Firestore profile (server is source of truth)
   useEffect(() => {
@@ -226,6 +228,12 @@ export default function Game() {
       setTargetPlaceId(null);
       setArrivedAt(detail.placeId);
       sfx.play("arrive");
+      // Auto-enter building after arrival (places with interiors)
+      if (detail.placeId === "home") {
+        setTimeout(() => setInterior("home"), 600);
+      } else if (detail.placeId === "transcorp" || detail.placeId === "magicland") {
+        setTimeout(() => setInterior("owambe"), 600);
+      }
     };
     window.addEventListener("naijalavish:arrive", handler as EventListener);
     return () => window.removeEventListener("naijalavish:arrive", handler as EventListener);
@@ -267,7 +275,13 @@ export default function Game() {
   }
 
   function pickFromMap(id: string) {
-    setTargetPlaceId(id);
+    // Trigger ride overlay (from current place → destination)
+    const fromPlace = usePlayer.getState().placeId;
+    if (fromPlace && fromPlace !== id) {
+      setRide({ from: fromPlace, to: id });
+    } else {
+      setTargetPlaceId(id);
+    }
     setSheet(null);
   }
 
@@ -376,13 +390,26 @@ export default function Game() {
         <button
           onClick={() => {
             sfx.play("click");
-            window.dispatchEvent(new CustomEvent("naijalavish:exit-interior"));
+            setInterior(null);
           }}
           className="fixed top-3 right-3 z-40 panel px-3 py-2 text-xs font-medium"
           style={{ background: "rgba(15, 28, 22, 0.85)", color: "#fff", borderRadius: 999 }}
         >
           ← Exit to city
         </button>
+      )}
+
+      {/* Ride Overlay — shows when traveling */}
+      {ride && (
+        <RideOverlay
+          fromPlaceId={ride.from}
+          toPlaceId={ride.to}
+          onArrive={() => {
+            setRide(null);
+            setTargetPlaceId(ride.to);
+          }}
+          onCancel={() => setRide(null)}
+        />
       )}
     </main>
   );

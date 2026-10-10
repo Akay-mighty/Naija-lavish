@@ -427,7 +427,7 @@ export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
       });
 
       // Traffic update
-      trafficRef.current?.update(dt, t);
+      trafficRef.current?.update(dt, t, camera.position);
 
       // Remote players
       remotePlayersRef.current?.update(t);
