@@ -83,41 +83,59 @@ export default function HUD() {
   // Show needs panel on tap
   const [showNeeds, setShowNeeds] = useState(false);
 
+  const dayName = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date().getDay()];
+
   return (
     <>
-      {/* === SINGLE CLEAN TOP PILL (like LagosLife) === */}
+      {/* === ZONE HEADER (top-left, like reference) === */}
       <div
-        className="fixed top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-2"
+        className="fixed top-2 left-2 z-20 flex items-center gap-1.5 px-2.5 py-1.5"
+        style={{
+          background: "white",
+          borderRadius: 999,
+          boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+        }}
+      >
+        <button
+          onClick={() => { sfx.play("click"); usePlayer.getState().setScreen("landing"); }}
+          className="text-[10px] text-gray-400"
+          aria-label="Back"
+        >
+          ←
+        </button>
+        <span className="text-[11px] font-semibold text-gray-700 truncate" style={{ maxWidth: 80 }}>
+          {place?.name || "Abuja"}
+        </span>
+      </div>
+
+      {/* === CLOCK + WEATHER CHIP (top-center, like reference) === */}
+      <div
+        className="fixed top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-1.5"
         style={{
           background: "white",
           borderRadius: 999,
           boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
           border: "1px solid rgba(0,0,0,0.06)",
-          maxWidth: "calc(100vw - 16px)",
         }}
       >
-        {/* Time + mood */}
-        <button
-          onClick={() => setShowNeeds(!showNeeds)}
-          className="flex items-center gap-1.5 flex-none"
-        >
+        {/* Day + time */}
+        <button onClick={() => setShowNeeds(!showNeeds)} className="flex items-center gap-1.5 flex-none">
+          <span className="text-[9px] text-gray-400 font-medium">{dayName}</span>
           <span style={{ fontSize: 13 }}>{isNight ? "🌙" : "☀️"}</span>
           <b className="text-xs tabnum">{clockFromHour(gameHour)}</b>
           <span style={{ fontSize: 13 }}>{mood.face}</span>
         </button>
 
-        {/* Divider */}
         <div style={{ width: 1, height: 16, background: "rgba(0,0,0,0.08)" }} />
 
         {/* Cash */}
         <div className="flex items-center gap-1 flex-1 min-w-0">
           <span style={{ color: "#00875a", fontWeight: 700, fontSize: 13 }}>₦</span>
-          <b className="text-sm tabnum truncate" style={{ maxWidth: 120 }}>
+          <b className="text-sm tabnum truncate" style={{ maxWidth: 100 }}>
             {naira(cash).replace("₦", "").trim()}
           </b>
         </div>
 
-        {/* Divider */}
         <div style={{ width: 1, height: 16, background: "rgba(0,0,0,0.08)" }} />
 
         {/* Sound */}
@@ -129,10 +147,7 @@ export default function HUD() {
         <button
           onClick={handleDance}
           className="flex-none"
-          style={{
-            fontSize: 14,
-            filter: dancing ? "drop-shadow(0 0 4px #a855f7)" : "none",
-          }}
+          style={{ fontSize: 14, filter: dancing ? "drop-shadow(0 0 4px #a855f7)" : "none" }}
           aria-label="Dance"
         >
           💃
@@ -143,8 +158,8 @@ export default function HUD() {
       <div
         className="fixed top-12 right-2 z-20"
         style={{
-          width: 100,
-          height: 100,
+          width: 90,
+          height: 90,
           background: "linear-gradient(135deg, #a8d5b6 0%, #c8e6c9 50%, #d4e9d4 100%)",
           borderRadius: 12,
           boxShadow: "0 2px 12px rgba(0,0,0,0.1)",

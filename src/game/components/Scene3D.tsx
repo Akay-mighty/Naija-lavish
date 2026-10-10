@@ -248,6 +248,25 @@ export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
       camera.lookAt(target.x, 1, target.z);
     }
 
+    // ---- Weather: simple rain particles ----
+    const rainCount = 200;
+    const rainGeo = new THREE.BufferGeometry();
+    const rainPositions = new Float32Array(rainCount * 3);
+    for (let i = 0; i < rainCount; i++) {
+      rainPositions[i * 3] = (Math.random() - 0.5) * 40;
+      rainPositions[i * 3 + 1] = Math.random() * 20;
+      rainPositions[i * 3 + 2] = (Math.random() - 0.5) * 40;
+    }
+    rainGeo.setAttribute("position", new THREE.BufferAttribute(rainPositions, 3));
+    const rainMat = new THREE.PointsMaterial({ color: 0xaaccff, size: 0.08, transparent: true, opacity: 0 });
+    const rain = new THREE.Points(rainGeo, rainMat);
+    scene.add(rain);
+
+    // Weather state (clear by default, rain when gameHour is 6-8 or 14-16)
+    function isRaining(hour: number): boolean {
+      return (hour >= 6 && hour <= 8) || (hour >= 14 && hour <= 16);
+    }
+
     // ---- Animation loop ----
     const startTime = performance.now();
     let lastTime = startTime;
@@ -394,6 +413,33 @@ export default function Scene3D({ targetPlaceId, interior }: Scene3DProps) {
       // Street lamps on at night
       const lampIntensity = p.isNight ? 1.0 : 0;
       for (const l of lampLights) l.intensity = lampIntensity;
+
+      // ---- Weather: rain particles + wet road tint ----
+      const raining = isRaining(hour);
+      if (raining) {
+        rainMat.opacity = 0.4;
+        // Animate rain falling
+        const positions = rainGeo.attributes.position.array as Float32Array;
+        for (let i = 0; i < rainCount; i++) {
+          positions[i * 3 + 1] -= 15 * dt; // fall speed
+          if (positions[i * 3 + 1] < 0) {
+            positions[i * 3 + 1] = 20;
+            positions[i * 3] = (Math.random() - 0.5) * 40;
+            positions[i * 3 + 2] = (Math.random() - 0.5) * 40;
+          }
+        }
+        rainGeo.attributes.position.needsUpdate = true;
+        // Follow camera
+        if (charRef.current) {
+          rain.position.x = charRef.current.position.x;
+          rain.position.z = charRef.current.position.z;
+        }
+        // Wet road: increase fog + darken slightly
+        scene.fog!.far = 50;
+      } else {
+        rainMat.opacity = Math.max(0, rainMat.opacity - 0.01);
+        scene.fog!.far = 110 * (QUALITY_CONFIG[qualityRef.current]?.fogDensity || 1);
+      }
 
       // Buildings that hide the player fade translucent
       // (Check occluders between camera + character)
